@@ -1,5 +1,7 @@
 import Admin from "../models/admin.js";
 import generateToken from "../utils/generateToken.js";
+import validator from "validator";
+import bcrypt from "bcrypt";
 
 export const registerAdmin = async (req, res) => {
   const { firstName, lastName, email, password } = req.body;
@@ -47,27 +49,60 @@ export const registerAdmin = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, salt);
 
     // Create Admin
-    const Admin = new Admin({
+    const admin = new Admin({
       firstName,
       lastName,
       email,
       password: hashedPassword,
-      role,
+      role: Admin.role,
     });
 
-    await Admin.save();
+    await admin.save();
 
     res.status(201).json({
       success: true,
-      Admin: {
-        _id: Admin._id,
-        Admin,
-      },
+      admin,
       token: generateToken(Admin._id), // ✅ issue token after registration
       message: "Admin created successfully",
     });
   } catch (error) {
     console.error("❌ Error registering Admin:", error.message);
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const loginAdmin = async (req, res) => {
+  const { email, password } = req.body;
+
+  try {
+    if (!email || !password) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Email and password are required" });
+    }
+
+    const admin = await Admin.findOne({ email });
+    if (!admin) {
+      return res
+        .status(401)
+        .json({ success: false, message: "Invalid email or password" });
+    }
+
+    const isMatch = await bcrypt.compare(password, admin.password);
+    if (!isMatch) {
+      return res
+        .status(401)
+        .json({ success: false, message: "Invalid email or password" });
+    }
+
+    res.json({
+      success: true,
+      admin,
+      token: generateToken(admin._id),
+      message: "Logged in successfully",
+    });
+  } catch (error) {
+    console.error("❌ Error logging in admin:", error.message);
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };

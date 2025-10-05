@@ -1,5 +1,7 @@
 import User from "../models/user.js";
 import generateToken from "../utils/generateToken.js";
+import validator from "validator";
+import bcrypt from "bcrypt";
 
 export const registerUser = async (req, res) => {
   const { firstName, lastName, email, password, phone, address } = req.body;
@@ -62,15 +64,48 @@ export const registerUser = async (req, res) => {
 
     res.status(201).json({
       success: true,
-      user: {
-        _id: user._id,
-        user,
-      },
+      user,
       token: generateToken(user._id), // ✅ issue token after registration
       message: "User created successfully",
     });
   } catch (error) {
     console.error("❌ Error registering user:", error.message);
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const loginUser = async (req, res) => {
+  const { email, password } = req.body;
+
+  try {
+    if (!email || !password) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Email and password are required" });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res
+        .status(401)
+        .json({ success: false, message: "Invalid email or password" });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res
+        .status(401)
+        .json({ success: false, message: "Invalid email or password" });
+    }
+
+    res.json({
+      success: true,
+      user,
+      token: generateToken(user._id),
+      message: "Logged in successfully",
+    });
+  } catch (error) {
+    console.error("❌ Error logging in user:", error.message);
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };
