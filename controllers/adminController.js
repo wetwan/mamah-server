@@ -1,15 +1,13 @@
-import User from "../models/user.js";
+import Admin from "../models/admin.js";
 import generateToken from "../utils/generateToken.js";
 
-export const registerUser = async (req, res) => {
-  const { firstName, lastName, email, password, phone, address } = req.body;
+export const registerAdmin = async (req, res) => {
+  const { firstName, lastName, email, password } = req.body;
 
   try {
     const missingFields = [];
     if (!firstName) missingFields.push("firstName");
     if (!lastName) missingFields.push("lastName");
-    if (!address) missingFields.push("address");
-    if (!phone) missingFields.push("phone");
     if (!email) missingFields.push("email");
     if (!password) missingFields.push("password");
 
@@ -36,41 +34,40 @@ export const registerUser = async (req, res) => {
       });
     }
 
-    // Check if user already exists
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
+    // Check if Admin already exists
+    const existingAdmin = await Admin.findOne({ email });
+    if (existingAdmin) {
       return res
         .status(400)
-        .json({ success: false, message: "User already exists" });
+        .json({ success: false, message: "Admin already exists" });
     }
 
     // Hash password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Create user
-    const user = new User({
+    // Create Admin
+    const Admin = new Admin({
       firstName,
       lastName,
       email,
       password: hashedPassword,
-      phone,
-      address,
+      role,
     });
 
-    await user.save();
+    await Admin.save();
 
     res.status(201).json({
       success: true,
-      user: {
-        _id: user._id,
-        user,
+      Admin: {
+        _id: Admin._id,
+        Admin,
       },
-      token: generateToken(user._id), // ✅ issue token after registration
-      message: "User created successfully",
+      token: generateToken(Admin._id), // ✅ issue token after registration
+      message: "Admin created successfully",
     });
   } catch (error) {
-    console.error("❌ Error registering user:", error.message);
+    console.error("❌ Error registering Admin:", error.message);
     res.status(500).json({ success: false, message: error.message });
   }
 };
