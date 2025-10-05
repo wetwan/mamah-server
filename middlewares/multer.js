@@ -1,22 +1,11 @@
 import multer from "multer";
 
-const storage = multer.memoryStorage(); // store files in memory before uploading
-
-const fileFilter = (req, file, cb) => {
-  if (file.mimetype.startsWith("image/")) {
-    cb(null, true);
-  } else {
-    cb(new Error("Only image files are allowed!"), false);
-  }
-};
-
-const upload = multer({
-  storage,
-  fileFilter,
-  limits: {
-    files: 4,           // allow max 4 images
-    fileSize: 5 * 1024 * 1024, // max 5 MB per file
+const storage = multer.diskStorage({
+  filename: function (req, file, callback) {
+    callback(null, file.originalname);
   },
 });
 
-export default upload;
+const upload = multer({storage})
+
+export default upload

@@ -1,7 +1,6 @@
 import Product from "../models/product.js";
 import { v2 as cloudinary } from "cloudinary";
 
-// ✅ CREATE PRODUCT (max 4 images)
 export const createProduct = async (req, res) => {
   try {
     const {
@@ -15,7 +14,6 @@ export const createProduct = async (req, res) => {
       discount,
     } = req.body;
 
-    // Validate fields
     const missingFields = [];
     if (!name) missingFields.push("name");
     if (!description) missingFields.push("description");
@@ -25,7 +23,6 @@ export const createProduct = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: `Missing details: ${missingFields.join(", ")}`,
-        missingFields,
       });
     }
 
@@ -41,24 +38,13 @@ export const createProduct = async (req, res) => {
         .json({ success: false, message: "Maximum 4 images allowed." });
     }
 
-    // ✅ Upload images to Cloudinary properly
-    const uploadToCloudinary = (fileBuffer) => {
-      return new Promise((resolve, reject) => {
-        const stream = cloudinary.uploader.upload_stream(
-          { folder: "products" },
-          (error, result) => {
-            if (error) reject(error);
-            else resolve(result.secure_url);
-          }
-        );
-        stream.end(fileBuffer);
-      });
-    };
-
+    // ✅ Upload images using file.path (not buffer)
     const imageUrls = [];
     for (const file of req.files) {
-      const imageUrl = await uploadToCloudinary(file.buffer);
-      imageUrls.push(imageUrl);
+      const result = await cloudinary.uploader.upload(file.path, {
+        folder: "products",
+      });
+      imageUrls.push(result.secure_url);
     }
 
     // ✅ Create product
@@ -81,6 +67,23 @@ export const createProduct = async (req, res) => {
     });
   } catch (error) {
     console.error("❌ Error creating product:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const getAllProducts = async (req, res) => {
+  try {
+    // const userId = req.user._id;
+    // const prodcuts = await Task.find({ user: userId }); // fetch all prodcuts
+    const prodcuts = await Product.find(); // fetch all prodcuts
+
+    res.json({
+      success: true,
+      count: prodcuts.length,
+      prodcuts,
+    });
+  } catch (error) {
+    console.error("Error fetching prodcuts:", error.message);
     res.status(500).json({ success: false, message: error.message });
   }
 };
