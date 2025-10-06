@@ -88,7 +88,6 @@ export const getAllProducts = async (req, res) => {
   }
 };
 
-
 export const getSingleProduct = async (req, res) => {
   try {
     // const userId = req.user._id;
@@ -113,6 +112,157 @@ export const getSingleProduct = async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching product:", error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const addProductColor = async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const { name, hex } = req.body;
+
+    if (!name) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Color name required" });
+    }
+
+    const product = await Product.findById(productId);
+    if (!product) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Product not found" });
+    }
+
+    // Add new color
+    product.colors.push({ name, hex, available: true });
+    await product.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Color added successfully",
+      colors: product.colors,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const toggleColorAvailability = async (req, res) => {
+  try {
+    const { productId, colorId } = req.params;
+    const product = await Product.findById(productId);
+    if (!product) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Product not found" });
+    }
+
+    const color = product.colors.id(colorId);
+    if (!color) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Color not found" });
+    }
+
+    color.available = !color.available;
+    await product.save();
+
+    res.status(200).json({
+      success: true,
+      message: `Color ${color.available ? "enabled" : "disabled"} successfully`,
+      colors: product.colors,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const updateProductDiscount = async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const { discount } = req.body;
+
+    // Validate discount input
+    if (discount === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: "Discount value is required",
+      });
+    }
+
+    if (discount < 0 || discount > 100) {
+      return res.status(400).json({
+        success: false,
+        message: "Discount must be between 0 and 100",
+      });
+    }
+
+    // Find and update
+    const product = await Product.findById(productId);
+    if (!product) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Product not found" });
+    }
+
+    product.discount = discount;
+    await product.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Product discount updated successfully",
+      product: {
+        _id: product._id,
+        name: product.name,
+        price: product.price,
+        discount: product.discount,
+        finalPrice: product.finalPrice,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Error updating discount:", error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+export const updateProductPrice = async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const { price } = req.body;
+
+    // Validate discount input
+    if (price === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: "price value is required",
+      });
+    }
+
+    // Find and update
+    const product = await Product.findById(productId);
+    if (!product) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Product not found" });
+    }
+
+    product.price = price;
+    product.discount = 0;
+    await product.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Product price updated successfully",
+      product: {
+        _id: product._id,
+        name: product.name,
+        price: product.price,
+        discount: product.discount,
+        finalPrice: product.finalPrice,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Error updating price:", error.message);
     res.status(500).json({ success: false, message: error.message });
   }
 };

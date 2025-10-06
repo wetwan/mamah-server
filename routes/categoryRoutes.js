@@ -5,13 +5,18 @@ import {
   getAllCategories,
   getSinglecategory,
 } from "../controllers/categoryController.js";
-import { getSingleProduct } from "../controllers/productController.js";
+import { protectAdmin, protectAll } from "../middlewares/authMiddle.js";
 
 const CategoryRouter = express.Router();
 
-CategoryRouter.post("/create", upload.single("image"), createCategory);
+CategoryRouter.post(
+  "/create",
+  upload.single("image"),
+  protectAdmin,
+  createCategory
+);
 
-CategoryRouter.get("/", getAllCategories);
-CategoryRouter.get("/:id", getSinglecategory);
+CategoryRouter.get("/", protectAll, getAllCategories);
+CategoryRouter.get("/:id", protectAll, getSinglecategory);
 
 export default CategoryRouter;

@@ -25,6 +25,12 @@ const reviewSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+const colorSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  hex: { type: String, required: false }, // optional hex color
+  available: { type: Boolean, default: true },
+});
+
 const productSchema = new mongoose.Schema(
   {
     name: {
@@ -36,7 +42,7 @@ const productSchema = new mongoose.Schema(
       type: [String],
       required: [true, "At least one image is required"],
     },
-    colors: [String],
+    colors: [colorSchema],
     sizes: [String],
     price: {
       type: Number,
@@ -64,6 +70,12 @@ const productSchema = new mongoose.Schema(
       required: [true, "Product description is required"],
       trim: true,
       maxlength: [1000, "Description cannot exceed 1000 characters"],
+    },
+
+    postedby: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Admin",
+      required: true,
     },
     reviews: [reviewSchema],
     averageRating: {
