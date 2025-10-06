@@ -7,6 +7,7 @@ const userSchema = new mongoose.Schema({
   phone: { type: String },
   address: { type: String },
   password: { type: String, required: true },
+  stripeCustomerId: { type: String },
 });
 
 userSchema.virtual('fullName').get(function () {

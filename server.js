@@ -10,19 +10,30 @@ import adminRoute from "./routes/adminRoutes.js";
 import productRoute from "./routes/productRoutes.js";
 import CategoryRouter from "./routes/categoryRoutes.js";
 import orderRouter from "./routes/orderRoute.js";
+import { stripeWebhook } from "./controllers/stripeWebhook.js"; // Assuming this is now the correct import path for the controller
+import stripeRouter from "./routes/stripeRoute.js";
 
 dotenv.config();
-// initislize Express
+// initialize Express
 const app = express();
 await connectDB();
 connectCloudinary();
 
 app.use(cors());
+
+app.post(
+  "/api/stripe/webhook",
+  express.raw({ type: "application/json" }),
+  stripeWebhook
+);
+
 app.use(express.json());
 
-app.get("/", (req, res) => res.send("API Working"));
-app.use(express.raw({ type: "application/json" }));
 
+app.get("/", (req, res) => res.send("API Working"));
+
+
+app.use("/api/stripe", stripeRouter); 
 app.use("/api/user", userRoute);
 app.use("/api/admin", adminRoute);
 app.use("/api/product", productRoute);
