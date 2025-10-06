@@ -15,38 +15,17 @@ export const protectUser = async (req, res, next) => {
     res.json({ success: false, message: error.message });
   }
 };
-
 export const protectAdmin = async (req, res, next) => {
+  const token = req.headers.token;
+  if (!token) {
+    return res.json({ success: false, message: "Not authorized, Login again" });
+  }
   try {
-    const token = req.headers.token;
-
-    if (!token) {
-      return res
-        .status(401)
-        .json({
-          success: false,
-          message: "Not authorized, please log in again",
-        });
-    }
-
-    // ✅ Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const admin = await Admin.findById(decoded.id).select("-password");
-
-    if (!admin) {
-      return res
-        .status(403)
-        .json({ success: false, message: "Admin not found or unauthorized" });
-    }
-
-    req.admin = admin;
+    const decoded = jwt.verify(token, process.env.JWT_SERECT);
+    req.admin = await Admin.findById(decoded.id).select("-password");
     next();
   } catch (error) {
-    console.error("❌ Admin authorization error:", error.message);
-    res.status(401).json({
-      success: false,
-      message: "Token is invalid or expired. Please log in again.",
-    });
+    res.json({ success: false, message: error.message });
   }
 };
 
@@ -59,24 +38,19 @@ export const protectAll = async (req, res, next) => {
         .status(401)
         .json({ success: false, message: "Not authorized, please log in" });
     }
+    console.log("Authorization Header:", req.headers.token);
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     // Try to find user or admin
-    let user = await User.findById(decoded.id).select("-password");
-    let admin = await Admin.findById(decoded.id).select("-password");
+    req.user = await User.findById(decoded.id).select("-password");
+    req.admin = await Admin.findById(decoded.id).select("-password");
 
-    if (!user && !admin) {
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "Access denied: invalid credentials",
-        });
-    }
-
-    // Attach whoever logged in
-    req.user = user || admin;
-    req.role = user ? "user" : "admin";
+    // if (!user || !admin) {
+    //   return res.status(403).json({
+    //     success: false,
+    //     message: "Access denied: invalid credentials",
+    //   });
+    // }
 
     next();
   } catch (error) {

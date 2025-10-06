@@ -9,7 +9,11 @@ import {
   updateProductDiscount,
   updateProductPrice,
 } from "../controllers/productController.js";
-import { protectAdmin, protectAll } from "../middlewares/authMiddle.js";
+import {
+  protectAdmin,
+  protectAll,
+  protectUser,
+} from "../middlewares/authMiddle.js";
 
 const productRoute = express.Router();
 
@@ -19,8 +23,8 @@ productRoute.post(
   protectAdmin,
   createProduct
 );
-productRoute.get("/all", protectAll, getAllProducts);
-productRoute.get("/:id", protectAll, getSingleProduct);
+productRoute.get("/all", protectAdmin || protectUser, getAllProducts);
+productRoute.get("/:id", protectAdmin || protectUser, getSingleProduct);
 
 // change color
 productRoute.post("/:id/color", protectAdmin, addProductColor);
