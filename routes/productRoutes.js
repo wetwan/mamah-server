@@ -23,8 +23,8 @@ productRoute.post(
   protectAdmin,
   createProduct
 );
-productRoute.get("/all", protectAdmin || protectUser, getAllProducts);
-productRoute.get("/:id", protectAdmin || protectUser, getSingleProduct);
+productRoute.get("/all", protectAll, getAllProducts);
+productRoute.get("/:id", protectAll, getSingleProduct);
 
 // change color
 productRoute.post("/:id/color", protectAdmin, addProductColor);

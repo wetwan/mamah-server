@@ -38,19 +38,19 @@ export const protectAll = async (req, res, next) => {
         .status(401)
         .json({ success: false, message: "Not authorized, please log in" });
     }
-    console.log("Authorization Header:", req.headers.token);
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SERECT);
 
     // Try to find user or admin
-    req.user = await User.findById(decoded.id).select("-password");
-    req.admin = await Admin.findById(decoded.id).select("-password");
+    let user = await User.findById(decoded.id).select("-password");
+    let admin = await Admin.findById(decoded.id).select("-password");
 
-    // if (!user || !admin) {
-    //   return res.status(403).json({
-    //     success: false,
-    //     message: "Access denied: invalid credentials",
-    //   });
-    // }
+    if (!user && !admin) {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied: invalid credentials",
+      });
+    }
+    req.user = user || admin;
 
     next();
   } catch (error) {
