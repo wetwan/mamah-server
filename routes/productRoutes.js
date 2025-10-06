@@ -2,8 +2,11 @@ import express from "express";
 import upload from "../middlewares/multer.js";
 import {
   addProductColor,
+  addProductReview,
   createProduct,
+  deleteReview,
   getAllProducts,
+  getProductReviews,
   getSingleProduct,
   toggleColorAvailability,
   updateProductDiscount,
@@ -37,5 +40,11 @@ productRoute.patch(
 // change pricing
 productRoute.patch("/:id/discount", protectAdmin, updateProductDiscount);
 productRoute.patch("/:id/price", protectAdmin, updateProductPrice);
+
+// reviews
+
+productRoute.post("/:productId/review", protectUser, addProductReview);
+productRoute.get("/:productId/reviews", protectAll, getProductReviews);
+productRoute.delete("/:productId/review/:reviewId", protectAll, deleteReview);
 
 export default productRoute;
