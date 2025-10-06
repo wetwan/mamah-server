@@ -74,7 +74,7 @@ export const createProduct = async (req, res) => {
 export const getAllProducts = async (req, res) => {
   try {
     // const userId = req.user._id;
-    // const prodcuts = await Task.find({ user: userId }); // fetch all prodcuts
+    // const prodcuts = await Product.find({ user: userId }); // fetch all prodcuts
     const prodcuts = await Product.find(); // fetch all prodcuts
 
     res.json({
@@ -84,6 +84,35 @@ export const getAllProducts = async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching prodcuts:", error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+
+export const getSingleProduct = async (req, res) => {
+  try {
+    // const userId = req.user._id;
+    const { id } = req.params; // product ID from URL
+
+    const product = await Product.findById(id);
+    if (!product) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Product not found" });
+    }
+    // if (!product.user.equals(userId)) {
+    //   res.status(401).json({
+    //     success: false,
+    //     message: "Not authorized to access this product",
+    //   });
+    // }
+
+    res.json({
+      success: true,
+      product,
+    });
+  } catch (error) {
+    console.error("Error fetching product:", error.message);
     res.status(500).json({ success: false, message: error.message });
   }
 };

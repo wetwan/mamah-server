@@ -43,9 +43,6 @@ export const createCategory = async (req, res) => {
   }
 };
 
-/**
- * ✅ GET ALL CATEGORIES
- */
 export const getAllCategories = async (req, res) => {
   try {
     const categories = await Category.find().sort({ createdAt: -1 });
@@ -57,6 +54,34 @@ export const getAllCategories = async (req, res) => {
     });
   } catch (error) {
     console.error("❌ Error fetching categories:", error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const getSinglecategory = async (req, res) => {
+  try {
+    // const userId = req.user._id;
+    const { id } = req.params; // category ID from URL
+
+    const category = await Category.findById(id);
+    if (!category) {
+      return res
+        .status(404)
+        .json({ success: false, message: "category not found" });
+    }
+    // if (!category.user.equals(userId)) {
+    //   res.status(401).json({
+    //     success: false,
+    //     message: "Not authorized to access this category",
+    //   });
+    // }
+
+    res.json({
+      success: true,
+      category,
+    });
+  } catch (error) {
+    console.error("Error fetching category:", error.message);
     res.status(500).json({ success: false, message: error.message });
   }
 };
