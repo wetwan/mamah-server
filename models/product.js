@@ -55,7 +55,7 @@ const productSchema = new mongoose.Schema(
     category: {
       type: String,
       required: [true, "Product category is required"],
-      trim: true,
+      trim: true, 
     },
     stock: {
       type: Number,

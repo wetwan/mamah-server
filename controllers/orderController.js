@@ -29,6 +29,9 @@ export const createOrder = async (req, res) => {
           price: product.finalPrice,
           color: item.color,
           size: item.size,
+          address: shippingAddress,
+          shippingPrice,
+          taxPrice,
         };
       })
     );
