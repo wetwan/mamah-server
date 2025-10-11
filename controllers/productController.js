@@ -89,13 +89,24 @@ export const createProduct = async (req, res) => {
 
 export const getAllProducts = async (req, res) => {
   try {
-    // const userId = req.user._id;
-    // const prodcuts = await Product.find({ user: userId }); // fetch all prodcuts
-    const prodcuts = await Product.find(); // fetch all prodcuts
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+
+    const skip = (page - 1) * limit;
+
+    const prodcuts = await Product.find()
+      .skip(skip)
+      .limit(limit)
+      .sort({ createdAt: -1 }); // fetch all
+
+    const total = await Product.countDocuments();
 
     res.json({
       success: true,
       count: prodcuts.length,
+      total, // total number of products
+      currentPage: page, // current page number
+      totalPages: Math.ceil(total / limit),
       prodcuts,
     });
   } catch (error) {
@@ -291,7 +302,9 @@ export const addProductReview = async (req, res) => {
 
     const product = await Product.findById(productId);
     if (!product) {
-      return res.status(404).json({ success: false, message: "Product not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Product not found" });
     }
 
     // Check if user already reviewed
@@ -300,9 +313,10 @@ export const addProductReview = async (req, res) => {
     );
 
     if (alreadyReviewed) {
-      return res
-        .status(400)
-        .json({ success: false, message: "You have already reviewed this product" });
+      return res.status(400).json({
+        success: false,
+        message: "You have already reviewed this product",
+      });
     }
 
     const review = {
@@ -334,10 +348,15 @@ export const addProductReview = async (req, res) => {
 export const getProductReviews = async (req, res) => {
   try {
     const { productId } = req.params;
-    const product = await Product.findById(productId).populate("reviews.user", "name email");
+    const product = await Product.findById(productId).populate(
+      "reviews.user",
+      "name email"
+    );
 
     if (!product) {
-      return res.status(404).json({ success: false, message: "Product not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Product not found" });
     }
 
     res.status(200).json({
@@ -351,14 +370,15 @@ export const getProductReviews = async (req, res) => {
   }
 };
 
-
 export const deleteReview = async (req, res) => {
   try {
     const { productId, reviewId } = req.params;
 
     const product = await Product.findById(productId);
     if (!product) {
-      return res.status(404).json({ success: false, message: "Product not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Product not found" });
     }
 
     const review = product.reviews.find(
@@ -366,7 +386,9 @@ export const deleteReview = async (req, res) => {
     );
 
     if (!review) {
-      return res.status(404).json({ success: false, message: "Review not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Review not found" });
     }
 
     // ✅ Allow: Review owner or Admin
@@ -405,6 +427,3 @@ export const deleteReview = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
-
-
-

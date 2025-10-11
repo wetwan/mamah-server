@@ -87,13 +87,25 @@ export const createOrder = async (req, res) => {
 // ✅ GET ALL ORDERS OF LOGGED-IN USER
 export const getUserOrders = async (req, res) => {
   try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+
+    const skip = (page - 1) * limit;
+
     const orders = await Order.find({ user: req.user._id })
       .populate("items.product", "name images price")
+      .skip(skip)
+      .limit(limit)
       .sort({ createdAt: -1 });
+
+    const total = await Product.countDocuments();
 
     res.status(200).json({
       success: true,
       count: orders.length,
+      total, // total number of products
+      currentPage: page, // current page number
+      totalPages: Math.ceil(total / limit),
       orders,
     });
   } catch (error) {
