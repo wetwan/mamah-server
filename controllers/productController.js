@@ -89,25 +89,45 @@ export const createProduct = async (req, res) => {
 
 export const getAllProducts = async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
+    const { page = 1, limit = 12, cat, min, max, search, sort } = req.query;
+    const query = {};
+
+    if (cat) query.category = cat;
+    if (color) query.colors = { $in: [color] };
+    if (size) query.sizes = { $in: [size] };
+    if (min || max)
+      query.price = {
+        ...(min ? { $gte: Number(min) } : {}),
+        ...(max ? { $lte: Number(max) } : {}),
+      };
+
+    const sortOption =
+      sort === "a-z"
+        ? { name: 1 }
+        : sort === "z-a"
+        ? { name: -1 }
+        : sort === "low-high"
+        ? { price: 1 }
+        : sort === "high-low"
+        ? { price: -1 }
+        : {};
 
     const skip = (page - 1) * limit;
 
-    const prodcuts = await Product.find()
+    const products = await Product.find(query)
+      .sort(sortOption)
       .skip(skip)
-      .limit(limit)
-      .sort({ createdAt: -1 }); // fetch all
+      .limit(Number(limit));
 
-    const total = await Product.countDocuments();
+    const total = await Product.countDocuments(query);
 
     res.json({
       success: true,
       count: prodcuts.length,
-      total, // total number of products
-      currentPage: page, // current page number
-      totalPages: Math.ceil(total / limit),
-      prodcuts,
+      total,
+      page: Number(page),
+      pages: Math.ceil(total / limit),
+      products,
     });
   } catch (error) {
     console.error("Error fetching prodcuts:", error.message);
