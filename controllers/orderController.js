@@ -163,7 +163,6 @@ export const updateOrderStatus = async (req, res) => {
 export const getAllOrders = async (req, res) => {
   try {
     const orders = await Order.find()
-      .populate("user", "name email")
       .sort({ createdAt: -1 });
 
     res.status(200).json({
