@@ -123,7 +123,7 @@ export const getAllProducts = async (req, res) => {
 
     res.json({
       success: true,
-      count: prodcuts.length,
+      count: products.length,
       total,
       page: Number(page),
       pages: Math.ceil(total / limit),
@@ -146,12 +146,6 @@ export const getSingleProduct = async (req, res) => {
         .status(404)
         .json({ success: false, message: "Product not found" });
     }
-    // if (!product.user.equals(userId)) {
-    //   res.status(401).json({
-    //     success: false,
-    //     message: "Not authorized to access this product",
-    //   });
-    // }
 
     res.json({
       success: true,
