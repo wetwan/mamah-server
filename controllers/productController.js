@@ -89,17 +89,31 @@ export const createProduct = async (req, res) => {
 
 export const getAllProducts = async (req, res) => {
   try {
-    const { page = 1, limit = 12, cat, min, max, search, sort } = req.query;
-    const query = {};
+    const {
+      page = 1,
+      limit = 12,
+      cat,
+      color,
+      size,
+      min,
+      max,
+      search,
+      sort,
+    } = req.query;
 
-    if (cat) query.category = cat;
-    if (color) query.colors = { $in: [color] };
-    if (size) query.sizes = { $in: [size] };
-    if (min || max)
-      query.price = {
-        ...(min ? { $gte: Number(min) } : {}),
-        ...(max ? { $lte: Number(max) } : {}),
-      };
+    const query = {
+      ...(cat && { category: cat }),
+      ...(color && { colors: { $in: [color] } }),
+      ...(size && { sizes: { $in: [size] } }),
+      ...(min || max
+        ? {
+            price: {
+              ...(min && { $gte: Number(min) }),
+              ...(max && { $lte: Number(max) }),
+            },
+          }
+        : {}),
+    };
 
     const sortOption =
       sort === "a-z"
@@ -137,8 +151,7 @@ export const getAllProducts = async (req, res) => {
 
 export const getSingleProduct = async (req, res) => {
   try {
-    // const userId = req.user._id;
-    const { id } = req.params; // product ID from URL
+    const { id } = req.params;
 
     const product = await Product.findById(id);
     if (!product) {
