@@ -116,6 +116,14 @@ export const getUserOrders = async (req, res) => {
 
 export const updateOrderStatus = async (req, res) => {
   try {
+    const authHeader = req.headers["authorization"];
+    const token = authHeader && authHeader.split(" ")[1];
+
+    if (!token) {
+      return res
+        .status(401)
+        .json({ success: false, message: "No token provided" });
+    }
     const { orderId } = req.params;
     const { status } = req.body;
 
@@ -162,7 +170,17 @@ export const updateOrderStatus = async (req, res) => {
 
 export const getAllOrders = async (req, res) => {
   try {
+    const authHeader = req.headers["authorization"];
+    const token = authHeader && authHeader.split(" ")[1];
+
+    if (!token) {
+      return res
+        .status(401)
+        .json({ success: false, message: "No token provided" });
+    }
+
     const orders = await Order.find()
+      .populate("user", "firstName lastName email")
       .sort({ createdAt: -1 });
 
     res.status(200).json({

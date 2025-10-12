@@ -23,8 +23,15 @@ const getOrCreateStripeCustomer = async (user) => {
 
 export const createPayment = async (req, res) => {
   try {
+    const authHeader = req.headers["authorization"];
+    const token = authHeader && authHeader.split(" ")[1];
+
+    if (!token) {
+      return res
+        .status(401)
+        .json({ success: false, message: "No token provided" });
+    }
     const { orderId } = req.body;
-    console.log(orderId);
 
     const order = await Order.findById(orderId);
     if (!order) {
