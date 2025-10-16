@@ -6,36 +6,37 @@ export const createOrder = async (req, res) => {
     const { items, shippingAddress, paymentMethod, shippingPrice, taxPrice } =
       req.body;
 
+    // 🧩 Validate order items
     if (!items || items.length === 0) {
-      return res
-        .status(400)
-        .json({ success: false, message: "No order items provided" });
+      return res.status(400).json({
+        success: false,
+        message: "No order items provided",
+      });
     }
 
-    // Calculate total and validate products
+    // 🧮 Validate and populate product data
     const populatedItems = await Promise.all(
       items.map(async (item) => {
         const product = await Product.findById(item.product);
         if (!product) throw new Error(`Product not found: ${item.product}`);
 
-        // Check stock availability
+        // Check stock
         if (product.stock < item.quantity) {
-          throw new Error(`Not enough stock for product: ${product.name}`);
+          throw new Error(`Not enough stock for ${product.name}`);
         }
 
+        // ✅ Allow optional color and size
         return {
           product: product._id,
           quantity: item.quantity,
           price: product.finalPrice,
-          color: item.color,
-          size: item.size,
-          address: shippingAddress,
-          shippingPrice,
-          taxPrice,
+          color: item.color || null,
+          size: item.size || null,
         };
       })
     );
 
+    // 💰 Calculate totals
     const itemsPrice = populatedItems.reduce(
       (sum, item) => sum + item.price * item.quantity,
       0
@@ -43,7 +44,7 @@ export const createOrder = async (req, res) => {
 
     const totalPrice = itemsPrice + (shippingPrice || 0) + (taxPrice || 0);
 
-    // ✅ Create the order
+    // 🏗️ Create the order document
     const order = await Order.create({
       user: req.user._id,
       items: populatedItems,
@@ -57,22 +58,18 @@ export const createOrder = async (req, res) => {
       creatorModel: req.user.role === "admin" ? "Admin" : "User",
     });
 
-    // ✅ Reduce stock for each product after order creation
+    // 📦 Update stock
     await Promise.all(
       populatedItems.map(async (item) => {
         const product = await Product.findById(item.product);
-
         if (product) {
-          product.stock -= item.quantity;
-
-          // Optional: ensure stock doesn’t go negative
-          if (product.stock < 0) product.stock = 0;
-
+          product.stock = Math.max(0, product.stock - item.quantity);
           await product.save();
         }
       })
     );
 
+    // ✅ Done
     res.status(201).json({
       success: true,
       message: "✅ Order created successfully",
@@ -80,7 +77,10 @@ export const createOrder = async (req, res) => {
     });
   } catch (error) {
     console.error("❌ Error creating order:", error.message);
-    res.status(500).json({ success: false, message: error.message });
+    res.status(500).json({
+      success: false,
+      message: error.message || "Something went wrong while creating the order",
+    });
   }
 };
 

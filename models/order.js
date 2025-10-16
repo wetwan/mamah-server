@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import Product from "../models/product.js";
 
 const orderSchema = new mongoose.Schema(
   {
@@ -26,6 +27,7 @@ const orderSchema = new mongoose.Schema(
         size: {
           type: String,
         },
+        price: { type: Number, required: true },
       },
     ],
 
@@ -33,11 +35,11 @@ const orderSchema = new mongoose.Schema(
       fullName: { type: String, required: true },
       address1: { type: String, required: true },
       address2: { type: String, required: true },
-      state: { type: String,  },
-      postalCode: { type: String,  },
+      state: { type: String },
+      postalCode: { type: String },
       country: { type: String, required: true },
       phone: { type: String, required: true },
-      email: { type: String, required: true, unique: true },
+      email: { type: String, required: true },
     },
 
     paymentMethod: {
