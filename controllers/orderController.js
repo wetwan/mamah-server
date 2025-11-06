@@ -1,12 +1,15 @@
 import Order from "../models/order.js";
 import Product from "../models/product.js";
 
+import { wss } from "../server.js";
+
+const WS_OPEN = 1;
+
 export const createOrder = async (req, res) => {
   try {
     const { items, shippingAddress, paymentMethod, shippingPrice, taxPrice } =
       req.body;
 
-    // 🧩 Validate order items
     if (!items || items.length === 0) {
       return res.status(400).json({
         success: false,
@@ -58,16 +61,61 @@ export const createOrder = async (req, res) => {
       creatorModel: req.user.role === "admin" ? "Admin" : "User",
     });
 
-    // 📦 Update stock
+    const lowStockAlerts = [];
+    const LOW_STOCK_THRESHOLD = 5;
+
     await Promise.all(
       populatedItems.map(async (item) => {
         const product = await Product.findById(item.product);
         if (product) {
+          // Update stock, ensuring it doesn't go below 0
           product.stock = Math.max(0, product.stock - item.quantity);
           await product.save();
+
+          // 🔔 Check for low/no stock after update
+          if (product.stock <= LOW_STOCK_THRESHOLD) {
+            lowStockAlerts.push({
+              productId: product._id,
+              productName: product.name,
+              currentStock: product.stock,
+            });
+          }
         }
       })
     );
+
+    const newOrderMessage = JSON.stringify({
+      type: "NEW_ORDER",
+      orderId: order._id,
+      userId: order.user,
+      totalPrice: order.totalPrice,
+      status: order.status,
+      timestamp: new Date().toISOString(),
+    });
+
+    // Broadcast the new order alert
+    wss.clients.forEach((client) => {
+      if (client.readyState === WS_OPEN) {
+        client.send(newOrderMessage);
+      }
+    });
+
+    // --- 🔔 WebSocket Notification Logic for Inventory ---
+    if (lowStockAlerts.length > 0) {
+      const message = JSON.stringify({
+        type: "INVENTORY_ALERT",
+        alertCount: lowStockAlerts.length,
+        alerts: lowStockAlerts,
+        timestamp: new Date().toISOString(),
+      });
+
+      wss.clients.forEach((client) => {
+        // Assuming WS_OPEN is 1
+        if (client.readyState === WS_OPEN) {
+          client.send(message);
+        }
+      });
+    }
 
     // ✅ Done
     res.status(201).json({
@@ -186,6 +234,8 @@ export const updateOrderStatus = async (req, res) => {
         .json({ success: false, message: "Order not found" });
     }
 
+    const oldStatus = order.status;
+
     order.status = status;
 
     if (status === "delivered") {
@@ -193,7 +243,25 @@ export const updateOrderStatus = async (req, res) => {
       order.deliveredAt = Date.now();
     }
 
-    await order.save();
+    await order.save(); // Save the updated order
+
+    // --- 🔔 WebSocket Notification Logic ---
+    if (oldStatus !== status) {
+      const message = JSON.stringify({
+        type: "ORDER_STATUS_UPDATE",
+        orderId: order._id,
+        userId: order.user,
+        oldStatus: oldStatus,
+        newStatus: order.status,
+        timestamp: new Date().toISOString(),
+      });
+
+      wss.clients.forEach((client) => {
+        if (client.readyState === WS_OPEN) {
+          client.send(message);
+        }
+      });
+    }
 
     res.status(200).json({
       success: true,

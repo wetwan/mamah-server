@@ -1,6 +1,10 @@
 import Product from "../models/product.js";
 import { v2 as cloudinary } from "cloudinary";
 
+import { wss } from "../server.js";
+
+const WS_OPEN = 1;
+
 export const createProduct = async (req, res) => {
   try {
     const {
@@ -75,6 +79,26 @@ export const createProduct = async (req, res) => {
       images: imageUrls,
       postedby: req.admin._id,
     });
+
+    const newProductMessage = JSON.stringify({
+      type: "NEW_PRODUCT_CREATED",
+      productId: product._id,
+      productName: product.name,
+      category: product.category,
+      stockLevel: product.stock,
+      postedBy: req.admin._id,
+      timestamp: new Date().toISOString(),
+    });
+
+    // Broadcast the new product alert (useful for admin dashboards or caching services)
+    if (wss.clients) {
+      // Safety check
+      wss.clients.forEach((client) => {
+        if (client.readyState === WS_OPEN) {
+          client.send(newProductMessage);
+        }
+      });
+    }
 
     res.status(201).json({
       success: true,
@@ -152,9 +176,7 @@ export const getAllProducts = async (req, res) => {
 export const getSingleProduct = async (req, res) => {
   try {
     const { id } = req.params;
-      console.log("🔍 Fetching product with ID:", id);
-  
-
+    console.log("🔍 Fetching product with ID:", id);
 
     const product = await Product.findById(id);
     if (!product) {
