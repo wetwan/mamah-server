@@ -125,20 +125,21 @@ export const getAllProducts = async (req, res) => {
       sort,
     } = req.query;
 
-    const query = {
-      ...(cat && { category: cat }),
-      ...(color && { colors: { $in: [color] } }),
-      ...(size && { sizes: { $in: [size] } }),
-      ...(min || max
-        ? {
-            price: {
-              ...(min && { $gte: Number(min) }),
-              ...(max && { $lte: Number(max) }),
-            },
-          }
-        : {}),
-    };
+    const skip = (page - 1) * limit;
 
+    const query = {};
+
+    if (cat) query.category = cat;
+
+    if (color) query.colors = { $in: [color] };
+
+    if (size) query.sizes = { $in: [size] };
+
+    if (min || max) {
+      query.price = {};
+      if (min) query.price.$gte = Number(min);
+      if (max) query.price.$lte = Number(max);
+    }
     const sortOption =
       sort === "a-z"
         ? { name: 1 }
@@ -148,9 +149,16 @@ export const getAllProducts = async (req, res) => {
         ? { price: 1 }
         : sort === "high-low"
         ? { price: -1 }
-        : {};
+        : { createdAt: -1 };
 
-    const skip = (page - 1) * limit;
+    if (search) {
+      const s = search.toLowerCase().trim();
+      query.$or = [
+        { name: { $regex: s, $options: "i" } },
+        { description: { $regex: s, $options: "i" } },
+        { category: { $regex: s, $options: "i" } },
+      ];
+    }
 
     const products = await Product.find(query)
       .sort(sortOption)
