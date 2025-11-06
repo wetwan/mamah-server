@@ -115,7 +115,7 @@ export const getAllProducts = async (req, res) => {
   try {
     const {
       page = 1,
-      limit = 12,
+      limit,
       cat,
       color,
       size,
@@ -140,6 +140,7 @@ export const getAllProducts = async (req, res) => {
       if (min) query.price.$gte = Number(min);
       if (max) query.price.$lte = Number(max);
     }
+
     const sortOption =
       sort === "a-z"
         ? { name: 1 }
