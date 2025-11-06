@@ -115,7 +115,7 @@ export const getAllProducts = async (req, res) => {
   try {
     const {
       page = 1,
-      limit,
+      limit = 20,
       cat,
       color,
       size,
@@ -124,6 +124,11 @@ export const getAllProducts = async (req, res) => {
       search,
       sort,
     } = req.query;
+
+  if (Number(limit) === 0) {
+    const all = await Product.find({});
+    return res.json({ products: all });
+  }
 
     const skip = (page - 1) * limit;
 
