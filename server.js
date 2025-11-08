@@ -73,7 +73,7 @@ wss.on("connection", (ws, req) => {
     );
 
     app.use(express.json());
-
+   
     app.get("/", (req, res) => res.send("API Working"));
     app.use("/api/stripe", stripeRouter);
     app.use("/api/user", userRoute);
