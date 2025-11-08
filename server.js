@@ -24,29 +24,39 @@ const PORT = process.env.PORT || 5000;
 const server = http.createServer(app);
 export const wss = new WebSocketServer({ server });
 
-wss.on("connection", (ws) => {
-  console.log("✅ New WebSocket client connected");
+wss.on("connection", (ws, req) => {
+    console.log("✅ New WebSocket client connected");
 
-  ws.on("message", (message) => {
-    const msg = message.toString(); // Messages are usually Buffers
-    console.log(`Received: ${msg}`);
-    // Echo back to the sender
-    ws.send(`Server received: ${msg}`);
+    // NOTE: authenticateUser(req) must be able to read authentication 
+    // data (e.g., token from cookies or query string) from the handshake request.
+    const user = authenticateUser(req); 
 
-    // Example: Broadcast to all connected clients (e.g., for a chat app)
-    // wss.clients.forEach((client) => {
-    //     if (client.readyState === ws.OPEN) {
-    //         client.send(msg);
-    //     }
-    // });
-  });
+    if (user) {
+        // Assign role if authenticated
+        ws.userRole = user.role;
+        console.log(`User connected with role: ${user.role}`);
+    } else {
+        // Default to 'guest' if unauthenticated
+        ws.userRole = "guest";
+        console.log("Guest connected.");
+    }
 
-  ws.on("close", () => {
-    console.log("❌ WebSocket client disconnected");
-  });
 
-  // Send a welcome message upon connection
-  ws.send("Welcome to the WebSocket server!");
+    ws.send("Welcome to the WebSocket server!");
+
+    // The 'message' listener is now only for processing incoming data.
+    ws.on("message", (message) => {
+        const msg = message.toString();
+        console.log(`Received: ${msg}`);
+        // Echo back to the sender
+        ws.send(`Server received: ${msg}`);
+
+        // DO NOT re-authenticate here. The role is already set.
+    });
+
+    ws.on("close", () => {
+        console.log("❌ WebSocket client disconnected");
+    });
 });
 
 // Connect to MongoDB first, then start server

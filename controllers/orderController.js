@@ -17,7 +17,6 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    // 🧮 Validate and populate product data
     const populatedItems = await Promise.all(
       items.map(async (item) => {
         const product = await Product.findById(item.product);
@@ -25,10 +24,11 @@ export const createOrder = async (req, res) => {
 
         // Check stock
         if (product.stock < item.quantity) {
-          throw new Error(`Not enough stock for ${product.name}`);
+          throw new Error(
+            `NOT_ENOUGH_STOCK: Not enough stock for ${product.name}`
+          );
         }
 
-        // ✅ Allow optional color and size
         return {
           product: product._id,
           quantity: item.quantity,
@@ -39,7 +39,6 @@ export const createOrder = async (req, res) => {
       })
     );
 
-    // 💰 Calculate totals
     const itemsPrice = populatedItems.reduce(
       (sum, item) => sum + item.price * item.quantity,
       0
@@ -47,7 +46,11 @@ export const createOrder = async (req, res) => {
 
     const totalPrice = itemsPrice + (shippingPrice || 0) + (taxPrice || 0);
 
-    // 🏗️ Create the order document
+    let status = "pending";
+    if (paymentMethod === "cash_on_delivery") {
+      status = "processing";
+    }
+
     const order = await Order.create({
       user: req.user._id,
       items: populatedItems,
@@ -57,6 +60,7 @@ export const createOrder = async (req, res) => {
       shippingPrice: shippingPrice || 0,
       taxPrice: taxPrice || 0,
       totalPrice,
+      status,
       createdBy: req.user._id,
       creatorModel: req.user.role === "admin" ? "Admin" : "User",
     });
@@ -64,25 +68,25 @@ export const createOrder = async (req, res) => {
     const lowStockAlerts = [];
     const LOW_STOCK_THRESHOLD = 5;
 
-    await Promise.all(
-      populatedItems.map(async (item) => {
-        const product = await Product.findById(item.product);
-        if (product) {
-          // Update stock, ensuring it doesn't go below 0
-          product.stock = Math.max(0, product.stock - item.quantity);
-          await product.save();
+    if (paymentMethod !== "card") {
+      await Promise.all(
+        populatedItems.map(async (item) => {
+          const product = await Product.findById(item.product);
+          if (product) {
+            product.stock = Math.max(0, product.stock - item.quantity);
+            await product.save();
 
-          // 🔔 Check for low/no stock after update
-          if (product.stock <= LOW_STOCK_THRESHOLD) {
-            lowStockAlerts.push({
-              productId: product._id,
-              productName: product.name,
-              currentStock: product.stock,
-            });
+            if (product.stock <= LOW_STOCK_THRESHOLD) {
+              lowStockAlerts.push({
+                productId: product._id,
+                productName: product.name,
+                currentStock: product.stock,
+              });
+            }
           }
-        }
-      })
-    );
+        })
+      );
+    }
 
     const newOrderMessage = JSON.stringify({
       type: "NEW_ORDER",
@@ -93,15 +97,13 @@ export const createOrder = async (req, res) => {
       timestamp: new Date().toISOString(),
     });
 
-    // Broadcast the new order alert
     wss.clients.forEach((client) => {
-      if (client.readyState === WS_OPEN) {
+      if (client.readyState === WS_OPEN && client.userRole === "admin") {
         client.send(newOrderMessage);
       }
     });
 
-    // --- 🔔 WebSocket Notification Logic for Inventory ---
-    if (lowStockAlerts.length > 0) {
+    if (paymentMethod !== "card" && lowStockAlerts.length > 0) {
       const message = JSON.stringify({
         type: "INVENTORY_ALERT",
         alertCount: lowStockAlerts.length,
@@ -110,14 +112,12 @@ export const createOrder = async (req, res) => {
       });
 
       wss.clients.forEach((client) => {
-        // Assuming WS_OPEN is 1
-        if (client.readyState === WS_OPEN) {
+        if (client.readyState === WS_OPEN && client.userRole === "admin") {
           client.send(message);
         }
       });
     }
 
-    // ✅ Done
     res.status(201).json({
       success: true,
       message: "✅ Order created successfully",
@@ -125,6 +125,15 @@ export const createOrder = async (req, res) => {
     });
   } catch (error) {
     console.error("❌ Error creating order:", error.message);
+
+    if (error.message && error.message.startsWith("NOT_ENOUGH_STOCK:")) {
+      const userMessage = error.message.replace("NOT_ENOUGH_STOCK: ", "");
+      return res.status(400).json({
+        success: false,
+        message: userMessage,
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: error.message || "Something went wrong while creating the order",
@@ -132,7 +141,6 @@ export const createOrder = async (req, res) => {
   }
 };
 
-// ✅ GET ALL ORDERS OF LOGGED-IN USER (With Search + Filter + Pagination)
 export const getUserOrders = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -274,7 +282,6 @@ export const updateOrderStatus = async (req, res) => {
   }
 };
 
-
 export const getAllOrders = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -305,7 +312,9 @@ export const getAllOrders = async (req, res) => {
         filter.createdAt.$gte = new Date(startDate);
       }
       if (endDate) {
-        filter.createdAt.$lte = new Date(new Date(endDate).setHours(23, 59, 59, 999));
+        filter.createdAt.$lte = new Date(
+          new Date(endDate).setHours(23, 59, 59, 999)
+        );
       }
     }
 
@@ -388,6 +397,112 @@ export const getSingleorder = async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message,
+    });
+  }
+};
+
+export const updateOrderToPaid = async (req, res) => {
+  const orderId = req.params.id;
+  const { paymentIntentId } = req.body; // Sent from frontend after Stripe success
+
+  try {
+    const order = await Order.findById(orderId).populate("items.product");
+
+    if (!order) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Order not found" });
+    }
+
+    if (order.paymentMethod !== "card" || order.status !== "pending") {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Order status or payment method invalid for card payment update.",
+      });
+    }
+
+    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+
+    if (paymentIntent.status !== "succeeded") {
+      return res.status(400).json({
+        success: false,
+        message: "Payment intent status is not succeeded.",
+      });
+    }
+
+    if (paymentIntent.amount !== Math.round(order.totalPrice * 100)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Payment amount mismatch." });
+    }
+
+    const lowStockAlerts = [];
+    const LOW_STOCK_THRESHOLD = 5;
+
+    await Promise.all(
+      order.items.map(async (item) => {
+        const product = await Product.findById(item.product._id);
+        if (product) {
+          if (product.stock < item.quantity) {
+            throw new Error(
+              `Insufficient stock for ${product.name}. Cannot fulfill order.`
+            );
+          }
+
+          product.stock = Math.max(0, product.stock - item.quantity);
+          await product.save();
+
+          if (product.stock <= LOW_STOCK_THRESHOLD) {
+            lowStockAlerts.push({
+              productId: product._id,
+              productName: product.name,
+              currentStock: product.stock,
+            });
+          }
+        }
+      })
+    );
+
+    order.status = "pending";
+    order.paidAt = new Date(Date.now());
+    order.paymentResult = {
+      id: paymentIntentId,
+      status: "succeeded",
+      // email_address: paymentIntent.receipt_email,
+    };
+    await order.save();
+
+    const orderUpdateMessage = JSON.stringify({
+      type: "ORDER_STATUS_UPDATE",
+      orderId: order._id,
+      status: order.status,
+      paymentMethod: order.paymentMethod,
+      timestamp: new Date(Date.now()).toISOString(),
+    });
+
+    wss.clients.forEach((client) => {
+      if (client.readyState === WS_OPEN && client.userRole === "admin") {
+        client.send(orderUpdateMessage);
+      }
+    });
+
+    sendInventoryAlerts(lowStockAlerts);
+
+    res.status(200).json({
+      success: true,
+      message: "Order successfully paid and processed.",
+      order,
+    });
+  } catch (error) {
+    console.error(
+      "❌ Error processing payment and updating order:",
+      error.message
+    );
+    res.status(500).json({
+      success: false,
+      message:
+        error.message || "Failed to finalize payment and order processing.",
     });
   }
 };
