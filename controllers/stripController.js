@@ -28,7 +28,7 @@ export const createPayment = async (req, res) => {
 
     // Check if the user making the request owns the order (security best practice)
     // NOTE: If you don't use req.user here, anyone with a valid token can pay for anyone's order.
-    // const userId = req.user._id;
+    const userId = req.user._id;
 
     const order = await Order.findById(orderId);
     if (!order) {
@@ -38,9 +38,9 @@ export const createPayment = async (req, res) => {
     }
 
     // (Optional Security Check):
-    // if (order.user.toString() !== userId.toString()) {
-    //    return res.status(403).json({ success: false, message: "Unauthorized order access" });
-    // }
+    if (order.user.toString() !== userId.toString()) {
+       return res.status(403).json({ success: false, message: "Unauthorized order access" });
+    }
 
     const amount = Math.round(order.totalPrice * 100);
 
