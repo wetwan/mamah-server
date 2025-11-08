@@ -1,6 +1,6 @@
 import express from "express";
 
-import { protectAll } from "../middlewares/authMiddle.js";
+import { protectAll, protectUser } from "../middlewares/authMiddle.js";
 import {
   chargeSavedCard,
   createPayment,
@@ -9,7 +9,7 @@ import { stripeWebhook } from "../controllers/stripeWebhook.js";
 
 const stripeRouter = express.Router();
 
-stripeRouter.post("/create-payment", protectAll, createPayment);
+stripeRouter.post("/create-payment", protectUser, createPayment);
 
 stripeRouter.post("/charge-saved", protectAll, chargeSavedCard);
 
