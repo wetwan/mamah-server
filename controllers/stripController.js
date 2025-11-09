@@ -23,27 +23,38 @@ const getOrCreateStripeCustomer = async (user) => {
 
 export const createPayment = async (req, res) => {
   try {
-    const token = req.headers.authorization.split(" ")[1];
     const { orderId } = req.body;
 
+    const authHeader = req.headers.authorization;
+    let token;
+
+
+    if (authHeader && authHeader.startsWith("Bearer")) {
+      token = authHeader.split(" ")[1];
+    }
+
     if (!token) {
-      return res.status(401).json({
-        success: false,
-        message: "no token provided.",
-      });
+      return res
+        .status(401)
+        .json({ success: false, message: "No authorization token provided." });
     }
 
-    // Check if the user making the request owns the order (security best practice)
-    // NOTE: If you don't use req.user here, anyone with a valid token can pay for anyone's order.
 
-    if (!req.user || !req.user._id) {
-      // Use 401 Unauthorized since the user token seems invalid or missing
-      return res.status(401).json({
-        success: false,
-        message: "User authentication required or token invalid.",
-      });
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    const userFromToken = await User.findById(decoded.id).select("_id");
+
+    if (!userFromToken) {
+      return res
+        .status(401)
+        .json({
+          success: false,
+          message: "Token is valid but user was not found.",
+        });
     }
-    const userId = req.user._id;
+
+    // Use the correctly verified userId
+    const userId = userFromToken._id;
 
     const order = await Order.findById(orderId);
     if (!order) {
