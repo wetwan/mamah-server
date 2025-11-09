@@ -23,11 +23,18 @@ const getOrCreateStripeCustomer = async (user) => {
 
 export const createPayment = async (req, res) => {
   try {
-
     const { orderId } = req.body;
 
     // Check if the user making the request owns the order (security best practice)
     // NOTE: If you don't use req.user here, anyone with a valid token can pay for anyone's order.
+
+    if (!req.user || !req.user._id) {
+      // Use 401 Unauthorized since the user token seems invalid or missing
+      return res.status(401).json({
+        success: false,
+        message: "User authentication required or token invalid.",
+      });
+    }
     const userId = req.user._id;
 
     const order = await Order.findById(orderId);
@@ -39,7 +46,9 @@ export const createPayment = async (req, res) => {
 
     // (Optional Security Check):
     if (order.user.toString() !== userId.toString()) {
-       return res.status(403).json({ success: false, message: "Unauthorized order access" });
+      return res
+        .status(403)
+        .json({ success: false, message: "Unauthorized order access" });
     }
 
     const amount = Math.round(order.totalPrice * 100);
@@ -55,7 +64,7 @@ export const createPayment = async (req, res) => {
 
     const ephemeralKey = await stripe.ephemeralKeys.create(
       { customer: customerId },
-      { apiVersion: "2025-05-28" } // Ensure this is a valid Stripe API version you are using
+      { apiVersion: "2024-06-20" } // Ensure this is a valid Stripe API version you are using
     );
 
     const paymentIntent = await stripe.paymentIntents.create({
