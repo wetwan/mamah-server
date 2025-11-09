@@ -22,11 +22,17 @@ const getOrCreateStripeCustomer = async (user) => {
   return customer.id;
 };
 
+// NOTE: Ensure jwt, User, and Order are imported at the top of the file.
+// import jwt from "jsonwebtoken";
+// import User from "../models/user.js";
+// import Order from "../models/order.js";
+
 export const createPayment = async (req, res) => {
   try {
     const { orderId } = req.body;
 
-    // 1. Correctly extract the token from the "Authorization: Bearer <token>" header
+    const authHeader = req.headers.authorization;
+    let token;
     if (authHeader && authHeader.startsWith("Bearer")) {
       token = authHeader.split(" ")[1];
     }
@@ -37,22 +43,17 @@ export const createPayment = async (req, res) => {
         .json({ success: false, message: "No authorization token provided." });
     }
 
-    // 2. Verify Token (using the correct secret key name)
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // 3. Find User
     const userFromToken = await User.findById(decoded.id).select("_id");
 
     if (!userFromToken) {
-      return res
-        .status(401)
-        .json({
-          success: false,
-          message: "Token is valid but user was not found.",
-        });
+      return res.status(401).json({
+        success: false,
+        message: "Token is valid but user was not found.",
+      });
     }
 
-    // Use the correctly verified userId
     const userId = userFromToken._id;
 
     const order = await Order.findById(orderId);
@@ -62,7 +63,7 @@ export const createPayment = async (req, res) => {
         .json({ success: false, message: "Order not found" });
     }
 
-    // (Optional Security Check):
+  
     if (order.user.toString() !== userId.toString()) {
       return res
         .status(403)
@@ -71,18 +72,18 @@ export const createPayment = async (req, res) => {
 
     const amount = Math.round(order.totalPrice * 100);
 
-    const user = await User.findById(order.user);
-    if (!user) {
+    const orderUser = await User.findById(order.user);
+    if (!orderUser) {
       return res
         .status(404)
-        .json({ success: false, message: "User not found" });
+        .json({ success: false, message: "User not found for order" });
     }
 
-    const customerId = await getOrCreateStripeCustomer(user);
+    const customerId = await getOrCreateStripeCustomer(orderUser);
 
     const ephemeralKey = await stripe.ephemeralKeys.create(
       { customer: customerId },
-      { apiVersion: "2024-06-20" } // Ensure this is a valid Stripe API version you are using
+      { apiVersion: "2024-06-20" }
     );
 
     const paymentIntent = await stripe.paymentIntents.create({
@@ -102,6 +103,16 @@ export const createPayment = async (req, res) => {
       customerId,
     });
   } catch (error) {
+
+    if (
+      error.name === "JsonWebTokenError" ||
+      error.name === "TokenExpiredError"
+    ) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid or expired token. Please log in again.",
+      });
+    }
     console.error("❌ Stripe error:", error.message);
     res.status(500).json({ error: error.message });
   }
