@@ -23,15 +23,15 @@ const getOrCreateStripeCustomer = async (user) => {
 
 export const createPayment = async (req, res) => {
   try {
-    const token = req.headers.authorization.split(' ')[1];
+    const token = req.headers.authorization.split(" ")[1];
     const { orderId } = req.body;
 
-if (!token) {
-    return res.status(401).json({
+    if (!token) {
+      return res.status(401).json({
         success: false,
         message: "no token provided.",
       });
-}
+    }
 
     // Check if the user making the request owns the order (security best practice)
     // NOTE: If you don't use req.user here, anyone with a valid token can pay for anyone's order.
