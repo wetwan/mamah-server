@@ -28,7 +28,6 @@ export const createPayment = async (req, res) => {
     const authHeader = req.headers.authorization;
     let token;
 
-
     if (authHeader && authHeader.startsWith("Bearer")) {
       token = authHeader.split(" ")[1];
     }
@@ -39,18 +38,15 @@ export const createPayment = async (req, res) => {
         .json({ success: false, message: "No authorization token provided." });
     }
 
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SERECT);
 
     const userFromToken = await User.findById(decoded.id).select("_id");
 
     if (!userFromToken) {
-      return res
-        .status(401)
-        .json({
-          success: false,
-          message: "Token is valid but user was not found.",
-        });
+      return res.status(401).json({
+        success: false,
+        message: "Token is valid but user was not found.",
+      });
     }
 
     // Use the correctly verified userId
