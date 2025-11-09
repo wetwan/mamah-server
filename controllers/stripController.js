@@ -2,6 +2,7 @@ import dotenv from "dotenv";
 import Stripe from "stripe";
 import User from "../models/user.js";
 import Order from "../models/order.js";
+import jwt from "jsonwebtoken";
 
 dotenv.config();
 
