@@ -197,7 +197,7 @@ export const getUserOrders = async (req, res) => {
       success: true,
       count: orders.length,
       total,
-      currentPage: page,
+      page: page,
       totalPages: Math.ceil(total / limit),
       statusCounts,
       orders,
