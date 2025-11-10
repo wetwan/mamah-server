@@ -110,16 +110,14 @@ export const createPayment = async (req, res) => {
     }
 
     const amount = Math.round(order.totalPrice * 100);
-    const customerId = await getOrCreateStripeCustomer(orderUser);
 
     console.log("💰 Creating payment intent for amount:", amount / 100, "NGN");
 
-    // ✅ Create payment intent WITHOUT customer parameter to avoid session issues
+    // ✅ FIXED: Remove automatic_payment_methods for CardElement compatibility
     const paymentIntent = await stripe.paymentIntents.create({
       amount,
       currency: "ngn",
-      automatic_payment_methods: { enabled: true },
-      payment_method_types: ["card"],
+      // ❌ REMOVED: automatic_payment_methods (incompatible with CardElement)
       metadata: {
         orderId: order._id.toString(),
         userId: order.user.toString(),
@@ -129,10 +127,10 @@ export const createPayment = async (req, res) => {
     console.log("✅ Payment intent created:", paymentIntent.id);
     console.log("✅ Client secret:", paymentIntent.client_secret);
 
+    // ✅ Validate client secret format
     if (
       !paymentIntent.client_secret ||
-      (!paymentIntent.client_secret.startsWith("pi_") &&
-        !paymentIntent.client_secret.startsWith("seti_"))
+      !paymentIntent.client_secret.startsWith("pi_")
     ) {
       console.error(
         "❌ Invalid client secret format:",
@@ -152,8 +150,6 @@ export const createPayment = async (req, res) => {
       success: true,
       clientSecret: paymentIntent.client_secret,
       paymentIntentId: paymentIntent.id,
-      order: order,
-      orderId: orderId,
     });
   } catch (error) {
     if (
@@ -166,6 +162,7 @@ export const createPayment = async (req, res) => {
       });
     }
     console.error("❌ Stripe error:", error.message);
+    console.error("❌ Full error:", error); // ✅ Added for debugging
     res.status(500).json({
       success: false,
       message: error.message,
