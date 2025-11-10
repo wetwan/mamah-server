@@ -119,6 +119,7 @@ export const createPayment = async (req, res) => {
       amount,
       currency: "ngn",
       automatic_payment_methods: { enabled: true },
+      payment_method_types: ["card"],
       metadata: {
         orderId: order._id.toString(),
         userId: order.user.toString(),
