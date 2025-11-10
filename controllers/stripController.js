@@ -170,6 +170,41 @@ export const createPayment = async (req, res) => {
   }
 };
 
+export const createPaymentSheet = async (req, res) => {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method Not Allowed" });
+  }
+
+  try {
+    const { amount } = req.body;
+
+    const customer = await stripe.customers.create();
+
+    const ephemeralKey = await stripe.ephemeralKeys.create(
+      { customer: customer.id },
+
+      { apiVersion: "2025-05-28.basil" }
+    );
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount,
+      currency: "ngn",
+      customer: customer.id,
+      payment_method_types: ["card"],
+    });
+
+    res.status(200).json({
+      paymentIntentId: paymentIntent.id,
+      paymentIntent: paymentIntent.client_secret,
+      ephemeralKey: ephemeralKey.secret,
+      customer: customer.id,
+      publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
+    });
+  } catch (error) {
+    console.error("Stripe error:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
 // export const createPayment = async (req, res) => {
 //   try {
 //     // // 🛑 VALIDATION FIX: Ensure req.body is present and orderId exists
