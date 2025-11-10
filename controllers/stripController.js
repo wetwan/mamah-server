@@ -31,7 +31,7 @@ export const createPayment = async (req, res) => {
   try {
     const { orderId } = req.body;
 
-    console.log("📝 Creating payment intent for order:", orderId);
+    console.log("🔍 Creating payment intent for order:", orderId);
 
     const authHeader = req.headers.authorization;
     let token;
@@ -46,7 +46,6 @@ export const createPayment = async (req, res) => {
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SERECT);
-
     const userFromToken = await User.findById(decoded.id).select("_id");
 
     if (!userFromToken) {
@@ -77,6 +76,7 @@ export const createPayment = async (req, res) => {
         .status(403)
         .json({ success: false, message: "Unauthorized order access" });
     }
+
     const orderUser = await User.findById(order.user);
     if (!orderUser) {
       return res
@@ -84,6 +84,7 @@ export const createPayment = async (req, res) => {
         .json({ success: false, message: "User not found for order" });
     }
 
+    // ✅ Check if payment intent already exists
     if (order.paymentIntentId) {
       console.log("🔄 Order already has a payment intent, retrieving...");
 
@@ -92,11 +93,11 @@ export const createPayment = async (req, res) => {
           order.paymentIntentId
         );
 
-        // If the intent is still valid, return it
         if (
           existingIntent.status !== "succeeded" &&
           existingIntent.status !== "canceled"
         ) {
+          console.log("✅ Returning existing payment intent");
           return res.status(200).json({
             success: true,
             clientSecret: existingIntent.client_secret,
@@ -109,16 +110,11 @@ export const createPayment = async (req, res) => {
     }
 
     const amount = Math.round(order.totalPrice * 100);
-
     const customerId = await getOrCreateStripeCustomer(orderUser);
-
-    const ephemeralKey = await stripe.ephemeralKeys.create(
-      { customer: customerId },
-      { apiVersion: "2024-06-20" }
-    );
 
     console.log("💰 Creating payment intent for amount:", amount / 100, "NGN");
 
+    // ✅ Create payment intent WITHOUT customer parameter to avoid session issues
     const paymentIntent = await stripe.paymentIntents.create({
       amount,
       currency: "ngn",
@@ -130,6 +126,22 @@ export const createPayment = async (req, res) => {
     });
 
     console.log("✅ Payment intent created:", paymentIntent.id);
+    console.log("✅ Client secret:", paymentIntent.client_secret);
+
+    if (
+      !paymentIntent.client_secret ||
+      (!paymentIntent.client_secret.startsWith("pi_") &&
+        !paymentIntent.client_secret.startsWith("seti_"))
+    ) {
+      console.error(
+        "❌ Invalid client secret format:",
+        paymentIntent.client_secret
+      );
+      return res.status(500).json({
+        success: false,
+        message: "Invalid payment configuration generated",
+      });
+    }
 
     // ✅ Save payment intent ID to order
     order.paymentIntentId = paymentIntent.id;
@@ -139,9 +151,8 @@ export const createPayment = async (req, res) => {
       success: true,
       clientSecret: paymentIntent.client_secret,
       paymentIntentId: paymentIntent.id,
-      customerId,
-      orderId: order._id,
-      order,
+      order: order,
+      orderId: orderId,
     });
   } catch (error) {
     if (
@@ -154,7 +165,10 @@ export const createPayment = async (req, res) => {
       });
     }
     console.error("❌ Stripe error:", error.message);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };
 
