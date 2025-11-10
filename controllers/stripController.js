@@ -31,6 +31,8 @@ export const createPayment = async (req, res) => {
   try {
     const { orderId } = req.body;
 
+    console.log("📝 Creating payment intent for order:", orderId);
+
     const authHeader = req.headers.authorization;
     let token;
     if (authHeader && authHeader.startsWith("Bearer")) {
@@ -56,6 +58,13 @@ export const createPayment = async (req, res) => {
 
     const userId = userFromToken._id;
 
+    if (!orderId) {
+      return res.status(400).json({
+        success: false,
+        message: "Order ID is required",
+      });
+    }
+
     const order = await Order.findById(orderId);
     if (!order) {
       return res
@@ -63,15 +72,11 @@ export const createPayment = async (req, res) => {
         .json({ success: false, message: "Order not found" });
     }
 
-  
     if (order.user.toString() !== userId.toString()) {
       return res
         .status(403)
         .json({ success: false, message: "Unauthorized order access" });
     }
-
-    const amount = Math.round(order.totalPrice * 100);
-
     const orderUser = await User.findById(order.user);
     if (!orderUser) {
       return res
@@ -79,12 +84,40 @@ export const createPayment = async (req, res) => {
         .json({ success: false, message: "User not found for order" });
     }
 
+    if (order.paymentIntentId) {
+      console.log("🔄 Order already has a payment intent, retrieving...");
+
+      try {
+        const existingIntent = await stripe.paymentIntents.retrieve(
+          order.paymentIntentId
+        );
+
+        // If the intent is still valid, return it
+        if (
+          existingIntent.status !== "succeeded" &&
+          existingIntent.status !== "canceled"
+        ) {
+          return res.status(200).json({
+            success: true,
+            clientSecret: existingIntent.client_secret,
+            paymentIntentId: existingIntent.id,
+          });
+        }
+      } catch (error) {
+        console.log("⚠️ Existing payment intent not found, creating new one");
+      }
+    }
+
+    const amount = Math.round(order.totalPrice * 100);
+
     const customerId = await getOrCreateStripeCustomer(orderUser);
 
     const ephemeralKey = await stripe.ephemeralKeys.create(
       { customer: customerId },
       { apiVersion: "2024-06-20" }
     );
+
+    console.log("💰 Creating payment intent for amount:", amount / 100, "NGN");
 
     const paymentIntent = await stripe.paymentIntents.create({
       amount,
@@ -96,14 +129,21 @@ export const createPayment = async (req, res) => {
       },
     });
 
+    console.log("✅ Payment intent created:", paymentIntent.id);
+
+    // ✅ Save payment intent ID to order
+    order.paymentIntentId = paymentIntent.id;
+    await order.save();
+
     res.status(200).json({
       success: true,
       clientSecret: paymentIntent.client_secret,
       paymentIntentId: paymentIntent.id,
       customerId,
+      orderId: order._id,
+      order,
     });
   } catch (error) {
-
     if (
       error.name === "JsonWebTokenError" ||
       error.name === "TokenExpiredError"

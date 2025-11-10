@@ -65,6 +65,10 @@ const orderSchema = new mongoose.Schema(
       default: "pending",
     },
 
+    paymentIntentId: {
+      type: String,
+    },
+
     isPaid: {
       type: Boolean,
       default: false,

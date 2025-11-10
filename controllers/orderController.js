@@ -421,7 +421,7 @@ export const updateOrderToPaid = async (req, res) => {
           "Order status or payment method invalid for card payment update.",
       });
     }
-
+    order.status = "processing";
     const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
 
     if (paymentIntent.status !== "succeeded") {
