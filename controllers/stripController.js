@@ -45,7 +45,7 @@ export const createPayment = async (req, res) => {
         .json({ success: false, message: "No authorization token provided." });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SERECT);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const userFromToken = await User.findById(decoded.id).select("_id");
 
     if (!userFromToken) {

@@ -8,7 +8,7 @@ export const protectUser = async (req, res, next) => {
     return res.json({ success: false, message: "Not authorized, Login again" });
   }
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SERECT);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user = await User.findById(decoded.id).select("-password");
     next();
   } catch (error) {
@@ -21,7 +21,7 @@ export const protectAdmin = async (req, res, next) => {
     return res.json({ success: false, message: "Not authorized, Login again" });
   }
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SERECT);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.admin = await Admin.findById(decoded.id).select("-password");
     next();
   } catch (error) {
@@ -38,7 +38,7 @@ export const protectAll = async (req, res, next) => {
         .status(401)
         .json({ success: false, message: "Not authorized, please log in" });
     }
-    const decoded = jwt.verify(token, process.env.JWT_SERECT);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     // Try to find user or admin
     let user = await User.findById(decoded.id).select("-password");
