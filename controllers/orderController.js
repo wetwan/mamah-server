@@ -308,53 +308,51 @@ export const getAllOrders = async (req, res) => {
 
     if (startDate || endDate) {
       filter.createdAt = {};
-      if (startDate) {
-        filter.createdAt.$gte = new Date(startDate);
-      }
-      if (endDate) {
+      if (startDate) filter.createdAt.$gte = new Date(startDate);
+      if (endDate)
         filter.createdAt.$lte = new Date(
           new Date(endDate).setHours(23, 59, 59, 999)
         );
-      }
     }
 
-    // --- 2. Fetch Data (paginated or all) ---
-    let orders, totalFiltered;
-    let statusCounts = {};
+    // --- 2. If status filter OR date filter is applied → return ALL (no pagination) ---
+    if ((statusFilter && statusFilter !== "all") || startDate || endDate) {
+      const orders = await Order.find(filter).sort({ createdAt: -1 });
+      const totalFiltered = orders.length;
+      const statusCounts = await getStatusCounts(filter);
 
-    if (startDate || endDate) {
-      // Fetch all orders if date range is provided (no pagination)
-      orders = await Order.find(filter).sort({ createdAt: -1 });
-      totalFiltered = orders.length;
-      statusCounts = await getStatusCounts(filter);
       return res.status(200).json({
         success: true,
         count: orders.length,
         total: totalFiltered,
         currentPage: null,
-        totalPages: null,
-        statusCounts,
-        orders,
-      });
-    } else {
-      // Paginated response if no date range
-      totalFiltered = await Order.countDocuments(filter);
-      const totalPages = Math.ceil(totalFiltered / limit);
-      orders = await Order.find(filter)
-        .sort({ createdAt: -1 })
-        .skip((page - 1) * limit)
-        .limit(limit);
-      statusCounts = await getStatusCounts(filter);
-      return res.status(200).json({
-        success: true,
-        count: orders.length,
-        total: totalFiltered,
-        currentPage: page,
-        totalPages,
+        totalPages: null, // no pagination
         statusCounts,
         orders,
       });
     }
+
+    // --- 3. Otherwise → Paginated Response ---
+    const totalFiltered = await Order.countDocuments(filter);
+    const totalPages = Math.ceil(totalFiltered / limit);
+
+    const orders = await Order.find(filter)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit);
+
+    const statusCounts = await getStatusCounts(filter);
+
+    return res.status(200).json({
+      success: true,
+      count: orders.length,
+      total: totalFiltered,
+      currentPage: page,
+      totalPages,
+      statusCounts,
+      orders,
+    });
+
   } catch (error) {
     console.error("❌ Error fetching orders:", error.message);
     return res.status(500).json({
@@ -364,6 +362,7 @@ export const getAllOrders = async (req, res) => {
     });
   }
 };
+
 
 // Helper function to avoid duplicate code
 const getStatusCounts = async (filter) => {
