@@ -2,11 +2,20 @@ import jwt from "jsonwebtoken";
 import User from "../models/user.js";
 import Admin from "../models/admin.js";
 
+const extractToken = (req) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    return authHeader.split(" ")[1];
+  }
+  return null;
+};
+
 export const protectUser = async (req, res, next) => {
-  const token = req.headers.token;
+  const token = extractToken(req);
   if (!token) {
     return res.json({ success: false, message: "Not authorized, Login again" });
   }
+  
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user = await User.findById(decoded.id).select("-password");
@@ -16,7 +25,7 @@ export const protectUser = async (req, res, next) => {
   }
 };
 export const protectAdmin = async (req, res, next) => {
-  const token = req.headers.token;
+  const token = extractToken(req);
   if (!token) {
     return res.json({ success: false, message: "Not authorized, Login again" });
   }

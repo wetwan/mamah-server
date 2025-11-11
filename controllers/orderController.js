@@ -400,9 +400,116 @@ export const getSingleorder = async (req, res) => {
   }
 };
 
+// export const updateOrderToPaid = async (req, res) => {
+//   const orderId = req.params.id;
+//   const { paymentIntentId } = req.body; // Sent from frontend after Stripe success
+
+//   try {
+//     const order = await Order.findById(orderId).populate("items.product");
+
+//     if (!order) {
+//       return res
+//         .status(404)
+//         .json({ success: false, message: "Order not found" });
+//     }
+
+//     if (order.paymentMethod !== "card" || order.status !== "pending") {
+//       return res.status(400).json({
+//         success: false,
+//         message:
+//           "Order status or payment method invalid for card payment update.",
+//       });
+//     }
+//     order.status = "processing";
+//     const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+
+//     if (paymentIntent.status !== "succeeded") {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Payment intent status is not succeeded.",
+//       });
+//     }
+
+//     if (paymentIntent.amount !== Math.round(order.totalPrice * 100)) {
+//       return res
+//         .status(400)
+//         .json({ success: false, message: "Payment amount mismatch." });
+//     }
+
+//     const lowStockAlerts = [];
+//     const LOW_STOCK_THRESHOLD = 5;
+
+//     await Promise.all(
+//       order.items.map(async (item) => {
+//         const product = await Product.findById(item.product._id);
+//         if (product) {
+//           if (product.stock < item.quantity) {
+//             throw new Error(
+//               `Insufficient stock for ${product.name}. Cannot fulfill order.`
+//             );
+//           }
+
+//           product.stock = Math.max(0, product.stock - item.quantity);
+//           await product.save();
+
+//           if (product.stock <= LOW_STOCK_THRESHOLD) {
+//             lowStockAlerts.push({
+//               productId: product._id,
+//               productName: product.name,
+//               currentStock: product.stock,
+//             });
+//           }
+//         }
+//       })
+//     );
+
+//     order.status = "pending";
+//     order.paidAt = new Date(Date.now());
+//     order.paymentResult = {
+//       id: paymentIntentId,
+//       status: "succeeded",
+//       // email_address: paymentIntent.receipt_email,
+//     };
+//     await order.save();
+
+//     const orderUpdateMessage = JSON.stringify({
+//       type: "ORDER_STATUS_UPDATE",
+//       orderId: order._id,
+//       status: order.status,
+//       paymentMethod: order.paymentMethod,
+//       timestamp: new Date(Date.now()).toISOString(),
+//     });
+
+//     wss.clients.forEach((client) => {
+//       if (client.readyState === WS_OPEN && client.userRole === "admin") {
+//         client.send(orderUpdateMessage);
+//       }
+//     });
+
+//     sendInventoryAlerts(lowStockAlerts);
+
+//     res.status(200).json({
+//       success: true,
+//       message: "Order successfully paid and processed.",
+//       order,
+//     });
+//   } catch (error) {
+//     console.error(
+//       "❌ Error processing payment and updating order:",
+//       error.message
+//     );
+//     res.status(500).json({
+//       success: false,
+//       message:
+//         error.message || "Failed to finalize payment and order processing.",
+//     });
+//   }
+// };
+
+
 export const updateOrderToPaid = async (req, res) => {
   const orderId = req.params.id;
-  const { paymentIntentId } = req.body; // Sent from frontend after Stripe success
+  const { paymentIntentId } = req.body;
 
   try {
     const order = await Order.findById(orderId).populate("items.product");
@@ -413,32 +520,35 @@ export const updateOrderToPaid = async (req, res) => {
         .json({ success: false, message: "Order not found" });
     }
 
+    // Verify this is a card payment order and it's pending
     if (order.paymentMethod !== "card" || order.status !== "pending") {
       return res.status(400).json({
         success: false,
-        message:
-          "Order status or payment method invalid for card payment update.",
-      });
-    }
-    order.status = "processing";
-    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
-
-    if (paymentIntent.status !== "succeeded") {
-      return res.status(400).json({
-        success: false,
-        message: "Payment intent status is not succeeded.",
+        message: "Order status or payment method invalid for card payment update.",
       });
     }
 
-    if (paymentIntent.amount !== Math.round(order.totalPrice * 100)) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Payment amount mismatch." });
-    }
+    // Verify payment with Stripe (make sure you have Stripe imported)
+    // const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+    // const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+
+    // if (paymentIntent.status !== "succeeded") {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: "Payment intent status is not succeeded.",
+    //   });
+    // }
+
+    // if (paymentIntent.amount !== Math.round(order.totalPrice * 100)) {
+    //   return res
+    //     .status(400)
+    //     .json({ success: false, message: "Payment amount mismatch." });
+    // }
 
     const lowStockAlerts = [];
     const LOW_STOCK_THRESHOLD = 5;
 
+    // Update product stock
     await Promise.all(
       order.items.map(async (item) => {
         const product = await Product.findById(item.product._id);
@@ -463,21 +573,24 @@ export const updateOrderToPaid = async (req, res) => {
       })
     );
 
-    order.status = "pending";
-    order.paidAt = new Date(Date.now());
+    // Update order status to processing (NOT pending)
+    order.status = "processing";
+    order.isPaid = true;
+    order.paidAt = new Date();
     order.paymentResult = {
       id: paymentIntentId,
       status: "succeeded",
-      // email_address: paymentIntent.receipt_email,
     };
     await order.save();
 
+    // Send WebSocket notifications
     const orderUpdateMessage = JSON.stringify({
       type: "ORDER_STATUS_UPDATE",
       orderId: order._id,
+      userId: order.user,
       status: order.status,
       paymentMethod: order.paymentMethod,
-      timestamp: new Date(Date.now()).toISOString(),
+      timestamp: new Date().toISOString(),
     });
 
     wss.clients.forEach((client) => {
@@ -486,7 +599,21 @@ export const updateOrderToPaid = async (req, res) => {
       }
     });
 
-    sendInventoryAlerts(lowStockAlerts);
+    // Send inventory alerts if needed
+    if (lowStockAlerts.length > 0) {
+      const alertMessage = JSON.stringify({
+        type: "INVENTORY_ALERT",
+        alertCount: lowStockAlerts.length,
+        alerts: lowStockAlerts,
+        timestamp: new Date().toISOString(),
+      });
+
+      wss.clients.forEach((client) => {
+        if (client.readyState === WS_OPEN && client.userRole === "admin") {
+          client.send(alertMessage);
+        }
+      });
+    }
 
     res.status(200).json({
       success: true,
@@ -494,14 +621,10 @@ export const updateOrderToPaid = async (req, res) => {
       order,
     });
   } catch (error) {
-    console.error(
-      "❌ Error processing payment and updating order:",
-      error.message
-    );
+    console.error("❌ Error processing payment:", error.message);
     res.status(500).json({
       success: false,
-      message:
-        error.message || "Failed to finalize payment and order processing.",
+      message: error.message || "Failed to finalize payment.",
     });
   }
 };

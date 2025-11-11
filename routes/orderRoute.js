@@ -18,6 +18,6 @@ orderRouter.post("/create", protectAll, createOrder);
 orderRouter.get("/my-orders", protectUser, getUserOrders);
 orderRouter.get("/all", protectAdmin, getAllOrders);
 orderRouter.put("/:orderId/status", protectAdmin, updateOrderStatus);
-orderRouter.post("/:id/pay", protectAll, updateOrderToPaid);
+orderRouter.post("/:id/pay", protectUser, updateOrderToPaid);
 
 export default orderRouter;
