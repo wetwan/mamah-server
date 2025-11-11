@@ -5,7 +5,73 @@ import { wss } from "../server.js";
 
 const WS_OPEN = 1;
 
+const cleanupPendingOrder = (orderId) => {
+  // 10 minutes in milliseconds
+  const DELAY_MS = 10 * 60 * 1000;
+
+  setTimeout(async () => {
+    try {
+      const order = await Order.findById(orderId);
+
+      if (
+        order &&
+        order.status === "pending" &&
+        order.paymentMethod === "card"
+      ) {
+        console.log(
+          `🕒 Deleting pending order ${orderId} and rolling back stock...`
+        );
+
+        // --- STOCK ROLLBACK IMPLEMENTATION ---
+        for (const item of order.items) {
+          const product = await Product.findById(item.product);
+          if (product) {
+            // Revert the stock based on the quantity in the pending order
+            product.stock += item.quantity;
+            await product.save();
+            console.log(
+              `   + Rolled back ${item.quantity} for product ${product.name}. New stock: ${product.stock}`
+            );
+          }
+        }
+        // --- END STOCK ROLLBACK ---
+
+        await Order.deleteOne({ _id: orderId });
+        console.log(
+          `✅ Pending order ${orderId} deleted successfully and stock reverted.`
+        );
+
+        // Notify admins about the cancelled order
+        const cancellationMessage = JSON.stringify({
+          type: "ORDER_CANCELLED",
+          orderId: orderId,
+          reason: "Payment timeout (10 mins)",
+          timestamp: new Date().toISOString(),
+        });
+
+        wss.clients.forEach((client) => {
+          if (client.readyState === WS_OPEN && client.userRole === "admin") {
+            client.send(cancellationMessage);
+          }
+        });
+      } else if (order) {
+        console.log(
+          `Order ${orderId} is no longer pending or is not a card payment. Cleanup skipped.`
+        );
+      }
+    } catch (error) {
+      console.error(
+        `❌ Error during cleanup of order ${orderId}:`,
+        error.message
+      );
+    }
+  }, DELAY_MS);
+};
+
 export const createOrder = async (req, res) => {
+  let order = null;
+  // Variable to track if stock reduction occurred
+  let isStockReduced = false;
   try {
     const { items, shippingAddress, paymentMethod, shippingPrice, taxPrice } =
       req.body;
@@ -51,7 +117,7 @@ export const createOrder = async (req, res) => {
       status = "processing";
     }
 
-    const order = await Order.create({
+    order = await Order.create({
       user: req.user._id,
       items: populatedItems,
       shippingAddress,
@@ -64,65 +130,97 @@ export const createOrder = async (req, res) => {
       createdBy: req.user._id,
       creatorModel: req.user.role === "admin" ? "Admin" : "User",
     });
+    try {
+      const lowStockAlerts = [];
+      const LOW_STOCK_THRESHOLD = 5;
 
-    const lowStockAlerts = [];
-    const LOW_STOCK_THRESHOLD = 5;
+      if (paymentMethod !== "card") {
+        await Promise.all(
+          populatedItems.map(async (item) => {
+            const product = await Product.findById(item.product);
+            if (product) {
+              product.stock = Math.max(0, product.stock - item.quantity);
+              await product.save();
 
-    if (paymentMethod !== "card") {
-      await Promise.all(
-        populatedItems.map(async (item) => {
-          const product = await Product.findById(item.product);
-          if (product) {
-            product.stock = Math.max(0, product.stock - item.quantity);
-            await product.save();
-
-            if (product.stock <= LOW_STOCK_THRESHOLD) {
-              lowStockAlerts.push({
-                productId: product._id,
-                productName: product.name,
-                currentStock: product.stock,
-              });
+              if (product.stock <= LOW_STOCK_THRESHOLD) {
+                lowStockAlerts.push({
+                  productId: product._id,
+                  productName: product.name,
+                  currentStock: product.stock,
+                });
+              }
             }
-          }
-        })
-      );
-    }
-
-    const newOrderMessage = JSON.stringify({
-      type: "NEW_ORDER",
-      orderId: order._id,
-      userId: order.user,
-      totalPrice: order.totalPrice,
-      status: order.status,
-      timestamp: new Date().toISOString(),
-    });
-
-    wss.clients.forEach((client) => {
-      if (client.readyState === WS_OPEN && client.userRole === "admin") {
-        client.send(newOrderMessage);
+          })
+        );
       }
-    });
 
-    if (paymentMethod !== "card" && lowStockAlerts.length > 0) {
-      const message = JSON.stringify({
-        type: "INVENTORY_ALERT",
-        alertCount: lowStockAlerts.length,
-        alerts: lowStockAlerts,
+      if (paymentMethod === "card" && status === "pending") {
+        cleanupPendingOrder(order._id.toString());
+        console.log(
+          `Card order ${order._id} created in 'pending' status. Stock reserved. Scheduled for cleanup in 10 minutes.`
+        );
+      }
+
+      const newOrderMessage = JSON.stringify({
+        type: "NEW_ORDER",
+        orderId: order._id,
+        userId: order.user,
+        totalPrice: order.totalPrice,
+        status: order.status,
         timestamp: new Date().toISOString(),
       });
 
       wss.clients.forEach((client) => {
         if (client.readyState === WS_OPEN && client.userRole === "admin") {
-          client.send(message);
+          client.send(newOrderMessage);
         }
       });
-    }
 
-    res.status(201).json({
-      success: true,
-      message: "✅ Order created successfully",
-      order,
-    });
+      if (lowStockAlerts.length > 0) {
+        const message = JSON.stringify({
+          type: "INVENTORY_ALERT",
+          alertCount: lowStockAlerts.length,
+          alerts: lowStockAlerts,
+          timestamp: new Date().toISOString(),
+        });
+
+        wss.clients.forEach((client) => {
+          if (client.readyState === WS_OPEN && client.userRole === "admin") {
+            client.send(message);
+          }
+        });
+      }
+
+      res.status(201).json({
+        success: true,
+        message: "✅ Order created successfully",
+        order,
+      });
+    } catch (error) {
+      console.error(
+        "❌ Secondary failure (Stock/WS): Initiating rollback...",
+        innerError.message
+      );
+
+      if (isStockReduced && createdOrder) {
+        // Revert the stock
+        for (const item of createdOrder.items) {
+          const product = await Product.findById(item.product);
+          if (product) {
+            product.stock += item.quantity;
+            await product.save();
+          }
+        }
+        // Attempt to delete the partially created order
+        await Order.deleteOne({ _id: createdOrder._id });
+        console.log(
+          `✅ Immediate rollback successful: Order ${createdOrder._id} deleted and stock restored.`
+        );
+      }
+
+      // Throw the error to be caught by the outer catch block
+      throw innerError;
+    }
   } catch (error) {
     console.error("❌ Error creating order:", error.message);
 
@@ -377,8 +475,10 @@ export const getSingleOrder = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const order = await Order.findById(id)
-      .populate("items.product", "name images price")
+    const order = await Order.findById(id).populate(
+      "items.product",
+      "name images price"
+    );
 
     if (!order) {
       return res
