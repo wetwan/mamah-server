@@ -239,6 +239,90 @@ export const createOrder = async (req, res) => {
   }
 };
 
+export const performScheduledOrderCleanup = async () => {
+  console.log(
+    "🧹 [Scheduled Cleanup] Starting bulk cleanup for expired pending orders..."
+  );
+
+  // Define the expiration threshold (e.g., 15 minutes to allow a buffer past the 10 min individual timer)
+  const EXPIRATION_THRESHOLD_MINUTES = 15;
+  const expirationDate = new Date(
+    Date.now() - EXPIRATION_THRESHOLD_MINUTES * 60 * 1000
+  );
+
+  try {
+    // Find orders that are:
+    // 1. Still 'pending'
+    // 2. Used 'card' payment method
+    // 3. Created before the expiration threshold
+    const expiredOrders = await Order.find({
+      status: "pending",
+      paymentMethod: "card",
+      createdAt: { $lt: expirationDate },
+    });
+
+    if (expiredOrders.length === 0) {
+      console.log("✅ [Scheduled Cleanup] No expired pending orders found.");
+      return;
+    }
+
+    console.log(
+      `🚨 [Scheduled Cleanup] Found ${expiredOrders.length} expired orders to clean up.`
+    );
+
+    for (const order of expiredOrders) {
+      try {
+        // Perform stock rollback
+        for (const item of order.items) {
+          const product = await Product.findById(item.product);
+          if (product) {
+            product.stock += item.quantity;
+            await product.save();
+          }
+        }
+
+        // Delete the expired order
+        await Order.deleteOne({ _id: order._id });
+
+        // Clear any lingering individual timer if the server had restarted quickly
+        if (pendingOrderTimers.has(order._id.toString())) {
+          clearTimeout(pendingOrderTimers.get(order._id.toString()));
+          pendingOrderTimers.delete(order._id.toString());
+        }
+
+        console.log(`   - Cleaned up and deleted expired order: ${order._id}`);
+
+        // Notify admins
+        const cancellationMessage = JSON.stringify({
+          type: "ORDER_CANCELLED",
+          orderId: order._id,
+          reason: "Scheduled payment timeout cleanup (15+ mins)",
+          timestamp: new Date().toISOString(),
+        });
+
+        wss.clients.forEach((client) => {
+          if (client.readyState === WS_OPEN && client.userRole === "admin") {
+            client.send(cancellationMessage);
+          }
+        });
+      } catch (innerError) {
+        console.error(
+          `❌ Error processing individual expired order ${order._id}:`,
+          innerError.message
+        );
+        // Continue to the next order even if one fails
+      }
+    }
+
+    console.log("✅ [Scheduled Cleanup] Bulk cleanup process finished.");
+  } catch (error) {
+    console.error(
+      "❌ Error during scheduled bulk order cleanup:",
+      error.message
+    );
+  }
+};
+
 export const getUserOrders = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;

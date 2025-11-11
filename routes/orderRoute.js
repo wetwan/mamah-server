@@ -9,9 +9,11 @@ import {
   getAllOrders,
   getSingleOrder,
   getUserOrders,
+  performScheduledOrderCleanup,
   updateOrderStatus,
   updateOrderToPaid,
 } from "../controllers/orderController.js";
+import { protectCron } from "../middlewares/cronAuth.js";
 
 const orderRouter = express.Router();
 
@@ -21,5 +23,6 @@ orderRouter.get("/all", protectAdmin, getAllOrders);
 orderRouter.get("/:id", getSingleOrder);
 orderRouter.put("/:orderId/status", protectAdmin, updateOrderStatus);
 orderRouter.post("/:id/pay", protectUser, updateOrderToPaid);
+orderRouter.post("/cleanup-trigger", protectCron, performScheduledOrderCleanup);
 
 export default orderRouter;
