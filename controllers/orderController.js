@@ -150,7 +150,6 @@ export const getUserOrders = async (req, res) => {
     const query = req.query.q?.toLowerCase().trim();
     const statusFilter = req.query.status?.toLowerCase();
 
-    // --- Base Filter (Always filter by logged-in user)
     let filter = { user: req.user._id };
 
     // ✅ Search (q)
@@ -210,14 +209,14 @@ export const getUserOrders = async (req, res) => {
 
 export const updateOrderStatus = async (req, res) => {
   try {
-    const authHeader = req.headers["authorization"];
-    const token = authHeader && authHeader.split(" ")[1];
+    // const authHeader = req.headers["authorization"];
+    // const token = authHeader && authHeader.split(" ")[1];
 
-    if (!token) {
-      return res
-        .status(401)
-        .json({ success: false, message: "No token provided" });
-    }
+    // if (!token) {
+    //   return res
+    //     .status(401)
+    //     .json({ success: false, message: "No token provided" });
+    // }
     const { orderId } = req.params;
     const { status } = req.body;
 
@@ -352,7 +351,6 @@ export const getAllOrders = async (req, res) => {
       statusCounts,
       orders,
     });
-
   } catch (error) {
     console.error("❌ Error fetching orders:", error.message);
     return res.status(500).json({
@@ -362,7 +360,6 @@ export const getAllOrders = async (req, res) => {
     });
   }
 };
-
 
 // Helper function to avoid duplicate code
 const getStatusCounts = async (filter) => {
@@ -376,13 +373,12 @@ const getStatusCounts = async (filter) => {
   }, {});
 };
 
-export const getSingleorder = async (req, res) => {
+export const getSingleOrder = async (req, res) => {
   try {
     const { id } = req.params;
 
     const order = await Order.findById(id)
-      .populate("user", "firstName lastName email")
-      .populate("items.product", "name images price");
+      .populate("items.product", "name images price")
 
     if (!order) {
       return res
@@ -506,7 +502,6 @@ export const getSingleorder = async (req, res) => {
 //   }
 // };
 
-
 export const updateOrderToPaid = async (req, res) => {
   const orderId = req.params.id;
   const { paymentIntentId } = req.body;
@@ -524,7 +519,8 @@ export const updateOrderToPaid = async (req, res) => {
     if (order.paymentMethod !== "card" || order.status !== "pending") {
       return res.status(400).json({
         success: false,
-        message: "Order status or payment method invalid for card payment update.",
+        message:
+          "Order status or payment method invalid for card payment update.",
       });
     }
 

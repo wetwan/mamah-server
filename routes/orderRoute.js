@@ -7,6 +7,7 @@ import {
 import {
   createOrder,
   getAllOrders,
+  getSingleOrder,
   getUserOrders,
   updateOrderStatus,
   updateOrderToPaid,
@@ -17,6 +18,7 @@ const orderRouter = express.Router();
 orderRouter.post("/create", protectAll, createOrder);
 orderRouter.get("/my-orders", protectUser, getUserOrders);
 orderRouter.get("/all", protectAdmin, getAllOrders);
+orderRouter.get("/:id", getSingleOrder);
 orderRouter.put("/:orderId/status", protectAdmin, updateOrderStatus);
 orderRouter.post("/:id/pay", protectUser, updateOrderToPaid);
 

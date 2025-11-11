@@ -3,9 +3,13 @@ import User from "../models/user.js";
 import Admin from "../models/admin.js";
 
 const extractToken = (req) => {
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    return authHeader.split(" ")[1];
+  if (
+    req.headers.authorization &&
+    req.headers.authorization.startsWith("Bearer ")
+  ) {
+    return req.headers.authorization.split(" ")[1];
+  } else if (req.headers.token) {
+    return req.headers.token; // fallback for custom header
   }
   return null;
 };
@@ -15,7 +19,7 @@ export const protectUser = async (req, res, next) => {
   if (!token) {
     return res.json({ success: false, message: "Not authorized, Login again" });
   }
-  
+
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user = await User.findById(decoded.id).select("-password");
@@ -24,6 +28,7 @@ export const protectUser = async (req, res, next) => {
     res.json({ success: false, message: error.message });
   }
 };
+
 export const protectAdmin = async (req, res, next) => {
   const token = extractToken(req);
   if (!token) {
