@@ -192,8 +192,7 @@ export const createOrder = async (req, res) => {
 
         wss.clients.forEach((client) => {
           if (
-            client.readyState === WS_OPEN &&
-            client.userRole === ("admin" || "sales")
+            client.readyState === WS_OPEN 
           ) {
             client.send(message);
           }
@@ -699,8 +698,7 @@ export const updateOrderToPaid = async (req, res) => {
 
       wss.clients.forEach((client) => {
         if (
-          client.readyState === WS_OPEN &&
-          client.userRole === ("admin" || "sales")
+          client.readyState === WS_OPEN 
         ) {
           client.send(alertMessage);
         }
