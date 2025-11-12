@@ -16,6 +16,7 @@ import orderRouter from "./routes/orderRoute.js";
 import { stripeWebhook } from "./controllers/stripeWebhook.js";
 import stripeRouter from "./routes/stripeRoute.js";
 import { Notification } from "./models/notification.js";
+import { authenticateWebSocket } from "./middleware/wsAuth.js";
 
 dotenv.config();
 
@@ -24,51 +25,153 @@ const PORT = process.env.PORT || 5000;
 
 const server = http.createServer(app);
 export const wss = new WebSocketServer({ server });
+let connectedClients = 0;
+
 
 wss.on("connection", async (ws, req) => {
-  console.log("✅ New WebSocket client connected");
+  connectedClients++;
+  console.log(`✅ New WebSocket client connected (Total: ${connectedClients})`);
 
-  // NOTE: authenticateUser(req) must be able to read authentication
-  // data (e.g., token from cookies or query string) from the handshake request.
-  const user = authenticateUser(req);
+  // Authenticate the user
+  const user = await authenticateWebSocket(req);
 
   if (user) {
-    // Assign role if authenticated
+    // Assign user info to the WebSocket connection
     ws.userId = user._id;
     ws.userRole = user.role;
-    console.log(`User connected with role: ${user.role}`);
+    ws.userName = user.name;
+    ws.isAuthenticated = true;
+    console.log(
+      `👤 User authenticated: ${user.name} (${user.role}) - ID: ${user._id}`
+    );
   } else {
-    // Default to 'guest' if unauthenticated
+    // Default to guest if authentication fails
     ws.userRole = "guest";
-    console.log("Guest connected.");
+    ws.isAuthenticated = false;
+    console.log("👤 Guest connected (unauthenticated)");
   }
-  console.log(`User connected: ${ws.userRole}`);
 
-  ws.send(JSON.stringify({ type: "INFO", message: "Welcome!" }));
+  // Send welcome message
+  ws.send(
+    JSON.stringify({
+      type: "CONNECTION_SUCCESS",
+      message: user
+        ? `Welcome back, ${user.name}!`
+        : "Connected as guest. Please login for full features.",
+      isAuthenticated: ws.isAuthenticated,
+      role: ws.userRole,
+      timestamp: new Date().toISOString(),
+    })
+  );
 
-  ws.send("Welcome to the WebSocket server!");
+  // Send recent notifications to authenticated users
+  if (ws.isAuthenticated && ws.userId) {
+    try {
+      const notifications = await Notification.find({
+        $or: [{ isGlobal: true }, { userIds: ws.userId }],
+      })
+        .sort({ createdAt: -1 })
+        .limit(50);
 
-  const notifications = await Notification.find({
-    $or: [{ isGlobal: true }, { userIds: ws.userId }],
-  })
-    .sort({ createdAt: -1 })
-    .limit(50);
+      if (notifications.length > 0) {
+        ws.send(
+          JSON.stringify({
+            type: "NOTIFICATION_HISTORY",
+            count: notifications.length,
+            notifications: notifications,
+            timestamp: new Date().toISOString(),
+          })
+        );
+        console.log(`📨 Sent ${notifications.length} notifications to user`);
+      }
+    } catch (error) {
+      console.error("❌ Error fetching notifications:", error.message);
+    }
+  }
 
-  notifications.forEach((notif) => {
-    ws.send(JSON.stringify(notif));
-  });
+  // Handle incoming messages from client
   ws.on("message", (message) => {
-    const msg = message.toString();
-    console.log(`Received: ${msg}`);
-    // Echo back to the sender
-    ws.send(`Server received: ${msg}`);
+    try {
+      const data = JSON.parse(message.toString());
+      console.log(`📨 Received from client:`, data);
 
-    // DO NOT re-authenticate here. The role is already set.
+      // Handle different message types
+      switch (data.type) {
+        case "PING":
+          ws.send(JSON.stringify({ type: "PONG", timestamp: Date.now() }));
+          break;
+
+        case "SUBSCRIBE":
+          // Client can subscribe to specific channels
+          if (data.channel) {
+            ws.subscribedChannels = ws.subscribedChannels || new Set();
+            ws.subscribedChannels.add(data.channel);
+            ws.send(
+              JSON.stringify({
+                type: "SUBSCRIBED",
+                channel: data.channel,
+                message: `Subscribed to ${data.channel}`,
+              })
+            );
+          }
+          break;
+
+        case "UNSUBSCRIBE":
+          if (data.channel && ws.subscribedChannels) {
+            ws.subscribedChannels.delete(data.channel);
+            ws.send(
+              JSON.stringify({
+                type: "UNSUBSCRIBED",
+                channel: data.channel,
+                message: `Unsubscribed from ${data.channel}`,
+              })
+            );
+          }
+          break;
+
+        default:
+          console.log("Unknown message type:", data.type);
+      }
+    } catch (error) {
+      console.error("❌ Error processing WebSocket message:", error.message);
+      ws.send(
+        JSON.stringify({
+          type: "ERROR",
+          message: "Invalid message format",
+        })
+      );
+    }
   });
 
-  ws.on("close", () => {
-    console.log("❌ WebSocket client disconnected");
+  // Handle connection errors
+  ws.on("error", (error) => {
+    console.error("❌ WebSocket error:", error.message);
   });
+
+  // Handle disconnection
+  ws.on("close", (code, reason) => {
+    connectedClients--;
+    console.log(
+      `❌ WebSocket client disconnected (Total: ${connectedClients})`
+    );
+    console.log(`   Code: ${code}, Reason: ${reason || "No reason provided"}`);
+  });
+});
+
+const heartbeatInterval = setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (ws.isAlive === false) {
+      console.log("💀 Terminating inactive WebSocket connection");
+      return ws.terminate();
+    }
+
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 30000);
+
+wss.on("close", () => {
+  clearInterval(heartbeatInterval);
 });
 
 // Connect to MongoDB first, then start server
@@ -87,6 +190,15 @@ wss.on("connection", async (ws, req) => {
     app.use(express.json());
 
     app.get("/", (req, res) => res.send("API Working"));
+
+    app.get("/api/ws-status", (req, res) => {
+      res.json({
+        success: true,
+        connectedClients: wss.clients.size,
+        timestamp: new Date().toISOString(),
+      });
+    });
+
     app.use("/api/stripe", stripeRouter);
     app.use("/api/user", userRoute);
     app.use("/api/admin", adminRoute);
@@ -97,7 +209,9 @@ wss.on("connection", async (ws, req) => {
     Sentry.setupExpressErrorHandler(app);
 
     server.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}. HTTP and WS active.`);
+      console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`📡 HTTP API: http://localhost:${PORT}`);
+      console.log(`🔌 WebSocket: ws://localhost:${PORT}`);
     });
   } catch (error) {
     console.error("❌ Failed to start server:", error);

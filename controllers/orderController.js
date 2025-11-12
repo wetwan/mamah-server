@@ -5,11 +5,12 @@ import { wss } from "../server.js";
 
 const WS_OPEN = 1;
 
-const cleanupPendingOrder = (orderId) => {
-  // 10 minutes in milliseconds
-  const DELAY_MS = 10 * 60 * 1000;
+const pendingOrderTimers = new Map();
 
-  setTimeout(async () => {
+const cleanupPendingOrder = (orderId) => {
+  const DELAY_MS = 10 * 60 * 1000; // 10 minutes
+
+  const timer = setTimeout(async () => {
     try {
       const order = await Order.findById(orderId);
 
@@ -22,11 +23,10 @@ const cleanupPendingOrder = (orderId) => {
           `🕒 Deleting pending order ${orderId} and rolling back stock...`
         );
 
-        // --- STOCK ROLLBACK IMPLEMENTATION ---
+        // Stock rollback
         for (const item of order.items) {
           const product = await Product.findById(item.product);
           if (product) {
-            // Revert the stock based on the quantity in the pending order
             product.stock += item.quantity;
             await product.save();
             console.log(
@@ -34,7 +34,6 @@ const cleanupPendingOrder = (orderId) => {
             );
           }
         }
-        // --- END STOCK ROLLBACK ---
 
         await Order.deleteOne({ _id: orderId });
         console.log(
@@ -69,14 +68,30 @@ const cleanupPendingOrder = (orderId) => {
         `❌ Error during cleanup of order ${orderId}:`,
         error.message
       );
+    } finally {
+      // Remove timer from tracking
+      pendingOrderTimers.delete(orderId.toString());
     }
   }, DELAY_MS);
+
+  // Store timer reference
+  pendingOrderTimers.set(orderId.toString(), timer);
+};
+
+export const cancelPendingOrderCleanup = (orderId) => {
+  const orderIdStr = orderId.toString();
+  if (pendingOrderTimers.has(orderIdStr)) {
+    clearTimeout(pendingOrderTimers.get(orderIdStr));
+    pendingOrderTimers.delete(orderIdStr);
+    console.log(`⏹️ Cancelled cleanup timer for order ${orderIdStr}`);
+  }
 };
 
 export const createOrder = async (req, res) => {
   let order = null;
-  // Variable to track if stock reduction occurred
+
   let isStockReduced = false;
+
   try {
     const { items, shippingAddress, paymentMethod, shippingPrice, taxPrice } =
       req.body;
@@ -135,6 +150,7 @@ export const createOrder = async (req, res) => {
       createdBy: req.user._id,
       creatorModel: req.user.role === "admin" ? "Admin" : "User",
     });
+
     try {
       const lowStockAlerts = [];
       const LOW_STOCK_THRESHOLD = 5;
@@ -195,7 +211,10 @@ export const createOrder = async (req, res) => {
         });
 
         wss.clients.forEach((client) => {
-          if (client.readyState === WS_OPEN) {
+          if (
+            client.readyState === WS_OPEN &&
+            (client.userRole === "admin" || client.userRole === "sales")
+          ) {
             client.send(message);
           }
         });
@@ -212,9 +231,9 @@ export const createOrder = async (req, res) => {
         innerError.message
       );
 
-      if (isStockReduced && createdOrder) {
+      if (isStockReduced && createOrder) {
         // Revert the stock
-        for (const item of createdOrder.items) {
+        for (const item of createOrder.items) {
           const product = await Product.findById(item.product);
           if (product) {
             product.stock += item.quantity;
@@ -222,10 +241,22 @@ export const createOrder = async (req, res) => {
           }
         }
         // Attempt to delete the partially created order
-        await Order.deleteOne({ _id: createdOrder._id });
+        await Order.deleteOne({ _id: createOrder._id });
         console.log(
-          `✅ Immediate rollback successful: Order ${createdOrder._id} deleted and stock restored.`
+          `✅ Immediate rollback successful: Order ${createOrder._id} deleted and stock restored.`
         );
+      }
+
+      if (order) {
+        await Order.deleteOne({ _id: order._id });
+        console.log(
+          `✅ Rollback: Order ${order._id} deleted due to secondary failure.`
+        );
+
+        // Cancel cleanup timer if it was set
+        if (pendingOrderTimers.has(order._id.toString())) {
+          cancelPendingOrderCleanup(order._id);
+        }
       }
 
       // Throw the error to be caught by the outer catch block
@@ -254,17 +285,12 @@ export const performScheduledOrderCleanup = async () => {
     "🧹 [Scheduled Cleanup] Starting bulk cleanup for expired pending orders..."
   );
 
-  // Define the expiration threshold (e.g., 15 minutes to allow a buffer past the 10 min individual timer)
   const EXPIRATION_THRESHOLD_MINUTES = 15;
   const expirationDate = new Date(
     Date.now() - EXPIRATION_THRESHOLD_MINUTES * 60 * 1000
   );
 
   try {
-    // Find orders that are:
-    // 1. Still 'pending'
-    // 2. Used 'card' payment method
-    // 3. Created before the expiration threshold
     const expiredOrders = await Order.find({
       status: "pending",
       paymentMethod: "card",
