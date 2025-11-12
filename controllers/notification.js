@@ -26,3 +26,44 @@ export const getUserNotifications = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
+
+export const markNotificationAsRead = async (req, res) => {
+  try {
+    const notification = await Notification.findById(req.params.id);
+
+    if (!notification)
+      return res
+        .status(404)
+        .json({ success: false, message: "Notification not found" });
+
+    // Optional: only allow marking if it belongs to the user or is global
+    if (
+      notification.user &&
+      notification.user.toString() !== req.user._id.toString()
+    ) {
+      return res
+        .status(403)
+        .json({ success: false, message: "Not authorized" });
+    }
+
+    notification.isRead = true;
+    await notification.save();
+
+    res.json({ success: true, notification });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+export const markAllNotificationsAsRead = async (req, res) => {
+  try {
+    await Notification.updateMany(
+      { $or: [{ user: req.user._id }, { isGlobal: true }], isRead: false },
+      { $set: { isRead: true } }
+    );
+
+    res.json({ success: true, message: "All notifications marked as read" });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
