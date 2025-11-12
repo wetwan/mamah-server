@@ -15,6 +15,7 @@ import CategoryRouter from "./routes/categoryRoutes.js";
 import orderRouter from "./routes/orderRoute.js";
 import { stripeWebhook } from "./controllers/stripeWebhook.js";
 import stripeRouter from "./routes/stripeRoute.js";
+import { Notification } from "./models/notification.js";
 
 dotenv.config();
 
@@ -24,7 +25,7 @@ const PORT = process.env.PORT || 5000;
 const server = http.createServer(app);
 export const wss = new WebSocketServer({ server });
 
-wss.on("connection", (ws, req) => {
+wss.on("connection", async (ws, req) => {
   console.log("✅ New WebSocket client connected");
 
   // NOTE: authenticateUser(req) must be able to read authentication
@@ -41,10 +42,21 @@ wss.on("connection", (ws, req) => {
     ws.userRole = "guest";
     console.log("Guest connected.");
   }
+  console.log(`User connected: ${ws.userRole}`);
+
+  ws.send(JSON.stringify({ type: "INFO", message: "Welcome!" }));
 
   ws.send("Welcome to the WebSocket server!");
 
-  // The 'message' listener is now only for processing incoming data.
+  const notifications = await Notification.find({
+    $or: [{ isGlobal: true }, { userIds: ws.userId }],
+  })
+    .sort({ createdAt: -1 })
+    .limit(50);
+
+  notifications.forEach((notif) => {
+    ws.send(JSON.stringify(notif));
+  });
   ws.on("message", (message) => {
     const msg = message.toString();
     console.log(`Received: ${msg}`);

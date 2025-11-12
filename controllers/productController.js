@@ -2,6 +2,7 @@ import Product from "../models/product.js";
 import { v2 as cloudinary } from "cloudinary";
 
 import { wss } from "../server.js";
+import { Notification } from "../models/notification.js";
 
 const WS_OPEN = 1;
 
@@ -97,8 +98,11 @@ export const createProduct = async (req, res) => {
       postedBy: req.admin._id,
       timestamp: new Date().toISOString(),
     });
+    await Notification.create({
+      ...newProductMessage,
+      isGlobal: true,
+    });
 
-    // Broadcast the new product alert (useful for admin dashboards or caching services)
     if (wss.clients) {
       // Safety check
       wss.clients.forEach((client) => {
