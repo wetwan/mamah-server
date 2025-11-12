@@ -17,6 +17,7 @@ import { stripeWebhook } from "./controllers/stripeWebhook.js";
 import stripeRouter from "./routes/stripeRoute.js";
 import { Notification } from "./models/notification.js";
 import { authenticateWebSocket } from "./middleware/wsAuth.js";
+import noficationRouter from "./routes/notification.js";
 
 dotenv.config();
 
@@ -205,6 +206,7 @@ wss.on("close", () => {
     app.use("/api/product", productRoute);
     app.use("/api/category", CategoryRouter);
     app.use("/api/order", orderRouter);
+    app.use("/api/notify", noficationRouter);
 
     Sentry.setupExpressErrorHandler(app);
 
