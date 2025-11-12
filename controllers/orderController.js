@@ -99,7 +99,6 @@ export const cancelPendingOrderCleanup = (orderId) => {
 
 export const createOrder = async (req, res) => {
   let order = null;
-
   let isStockReduced = false;
 
   try {
@@ -117,13 +116,10 @@ export const createOrder = async (req, res) => {
       items.map(async (item) => {
         const product = await Product.findById(item.product);
         if (!product) throw new Error(`Product not found: ${item.product}`);
-
-        // Check stock
-        if (product.stock < item.quantity) {
+        if (product.stock < item.quantity)
           throw new Error(
             `NOT_ENOUGH_STOCK: Not enough stock for ${product.name}`
           );
-        }
 
         return {
           product: product._id,
@@ -142,10 +138,8 @@ export const createOrder = async (req, res) => {
 
     const totalPrice = itemsPrice + (shippingPrice || 0) + (taxPrice || 0);
 
-    let status = "pending";
-    if (paymentMethod === "cash_on_delivery") {
-      status = "processing";
-    }
+    let status =
+      paymentMethod === "cash_on_delivery" ? "processing" : "pending";
 
     order = await Order.create({
       user: req.user._id,
@@ -182,87 +176,75 @@ export const createOrder = async (req, res) => {
             }
           })
         );
+        isStockReduced = true;
       }
 
       if (paymentMethod === "card" && status === "pending") {
         cleanupPendingOrder(order._id.toString());
         console.log(
-          `Card order ${order._id} created in 'pending' status. Stock reserved. Scheduled for cleanup in 10 minutes.`
+          `Card order ${order._id} created in 'pending' status. Stock reserved.`
         );
       }
 
-      const notificationData = {
+      // New order notification
+      await Notification.create({
         type: "NEW_ORDER",
         title: `New Order #${order._id.toString().slice(-4)}`,
         message: `Total: $${order.totalPrice}`,
         relatedId: order._id.toString(),
-        user: req.user._id, // For admins/sales
-      };
+        user: req.user._id,
+      });
 
-      await Notification.create(notificationData);
-
-      const message = {
-        ...notificationData,
-        timestamp: new Date().toISOString(),
-      };
-
-      // Send to admins, sales, and the user who created the order
       broadcast(
-        message,
+        {
+          type: "NEW_ORDER",
+          title: `New Order #${order._id.toString().slice(-4)}`,
+          message: `Total: $${order.totalPrice}`,
+          relatedId: order._id.toString(),
+          timestamp: new Date().toISOString(),
+        },
         (client) =>
           client.userRole === "admin" ||
           client.userRole === "sales" ||
           client.userId?.toString() === req.user._id.toString()
       );
 
-      async () => {
-        const notificationData = {
+      // Send inventory alert if needed
+      if (lowStockAlerts.length > 0) {
+        const alertData = {
           type: "INVENTORY_ALERT",
-          title: `Inventory Alert`,
-          message: `${alerts.length} product(s) are low in stock`,
+          title: "Inventory Alert",
+          message: `${lowStockAlerts.length} product(s) are low in stock`,
           relatedId: order._id.toString(),
         };
 
-        await Notification.create(notificationData);
-
-        const message = {
-          ...notificationData,
-          alerts,
-          alertCount: alerts.length,
-          timestamp: new Date().toISOString(),
-        };
-
+        await Notification.create(alertData);
         broadcast(
-          message,
+          {
+            ...alertData,
+            alerts: lowStockAlerts,
+            timestamp: new Date().toISOString(),
+          },
           (client) => client.userRole === "admin" || client.userRole === "sales"
         );
-      };
+      }
 
-      res.status(201).json({
+      return res.status(201).json({
         success: true,
         message: "✅ Order created successfully",
         order,
       });
     } catch (error) {
-      console.error(
-        "❌ Secondary failure (Stock/WS): Initiating rollback...",
-        innerError.message
-      );
+      console.error("❌ Secondary failure (Stock/WS):", error.message);
 
-      if (isStockReduced && createOrder) {
-        // Revert the stock
-        for (const item of createOrder.items) {
+      if (isStockReduced && order) {
+        for (const item of order.items) {
           const product = await Product.findById(item.product);
           if (product) {
             product.stock += item.quantity;
             await product.save();
           }
         }
-        // Attempt to delete the partially created order
-        await Order.deleteOne({ _id: createOrder._id });
-        console.log(
-          `✅ Immediate rollback successful: Order ${createOrder._id} deleted and stock restored.`
-        );
       }
 
       if (order) {
@@ -270,24 +252,17 @@ export const createOrder = async (req, res) => {
         console.log(
           `✅ Rollback: Order ${order._id} deleted due to secondary failure.`
         );
-
-        // Cancel cleanup timer if it was set
-        if (pendingOrderTimers.has(order._id.toString())) {
-          cancelPendingOrderCleanup(order._id);
-        }
       }
 
-      // Throw the error to be caught by the outer catch block
-      throw innerError;
+      throw error;
     }
   } catch (error) {
     console.error("❌ Error creating order:", error.message);
 
-    if (error.message && error.message.startsWith("NOT_ENOUGH_STOCK:")) {
-      const userMessage = error.message.replace("NOT_ENOUGH_STOCK: ", "");
+    if (error.message?.startsWith("NOT_ENOUGH_STOCK:")) {
       return res.status(400).json({
         success: false,
-        message: userMessage,
+        message: error.message.replace("NOT_ENOUGH_STOCK: ", ""),
       });
     }
 
@@ -660,7 +635,6 @@ export const updateOrderToPaid = async (req, res) => {
       });
     }
 
-
     const lowStockAlerts = [];
     const LOW_STOCK_THRESHOLD = 5;
 
@@ -699,7 +673,7 @@ export const updateOrderToPaid = async (req, res) => {
     };
     await order.save();
 
-    async (order) => {
+    if (order) {
       const notificationData = {
         type: "NEW_ORDER",
         title: `New Order #${order._id.toString().slice(-4)}`,
@@ -723,8 +697,8 @@ export const updateOrderToPaid = async (req, res) => {
           client.userRole === "sales" ||
           client.userId?.toString() === order.user.toString()
       );
-    };
-    async (alerts) => {
+    }
+    if (lowStockAlerts.length < 6) {
       const notificationData = {
         type: "INVENTORY_ALERT",
         title: `Inventory Alert`,
@@ -746,7 +720,7 @@ export const updateOrderToPaid = async (req, res) => {
         message,
         (client) => client.userRole === "admin" || client.userRole === "sales"
       );
-    };
+    }
 
     res.status(200).json({
       success: true,
