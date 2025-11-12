@@ -24,7 +24,11 @@ const reviewSchema = new mongoose.Schema(
 
 const colorSchema = new mongoose.Schema({
   name: { type: String, required: true },
-  hex: { type: String, required: false }, // optional hex color
+  hex: { type: String, required: false }, 
+  available: { type: Boolean, default: true },
+});
+const sizeSchema = new mongoose.Schema({
+  name: { type: String, required: true },
   available: { type: Boolean, default: true },
 });
 
@@ -40,7 +44,7 @@ const productSchema = new mongoose.Schema(
       required: [true, "At least one image is required"],
     },
     colors: [colorSchema],
-    sizes: [String],
+    sizes: [sizeSchema],
     price: {
       type: Number,
       required: [true, "Product price is required"],

@@ -52,7 +52,9 @@ const cleanupPendingOrder = (orderId) => {
         wss.clients.forEach((client) => {
           if (
             client.readyState === WS_OPEN &&
-            client.userRole === ("admin" || "sales")
+            (client.userRole === "admin" ||
+              client.userRole === "sales" ||
+              client.userId?.toString() === order.user.toString())
           ) {
             client.send(cancellationMessage);
           }
@@ -176,7 +178,9 @@ export const createOrder = async (req, res) => {
       wss.clients.forEach((client) => {
         if (
           client.readyState === WS_OPEN &&
-          client.userRole === ("admin" || "sales")
+          (client.userRole === "admin" ||
+            client.userRole === "sales" ||
+            client.userId?.toString() === order.user.toString())
         ) {
           client.send(newOrderMessage);
         }
@@ -191,9 +195,7 @@ export const createOrder = async (req, res) => {
         });
 
         wss.clients.forEach((client) => {
-          if (
-            client.readyState === WS_OPEN 
-          ) {
+          if (client.readyState === WS_OPEN) {
             client.send(message);
           }
         });
@@ -311,7 +313,9 @@ export const performScheduledOrderCleanup = async () => {
         wss.clients.forEach((client) => {
           if (
             client.readyState === WS_OPEN &&
-            client.userRole === ("admin" || "sales")
+            (client.userRole === "admin" ||
+              client.userRole === "sales" ||
+              client.userId?.toString() === order.user.toString())
           ) {
             client.send(cancellationMessage);
           }
@@ -554,7 +558,6 @@ export const getAllOrders = async (req, res) => {
   }
 };
 
-
 const getStatusCounts = async (filter) => {
   const statusSummary = await Order.aggregate([
     { $match: filter },
@@ -681,7 +684,9 @@ export const updateOrderToPaid = async (req, res) => {
     wss.clients.forEach((client) => {
       if (
         client.readyState === WS_OPEN &&
-        client.userRole === ("admin" || "sales")
+        (client.userRole === "admin" ||
+          client.userRole === "sales" ||
+          client.userId?.toString() === order.user.toString())
       ) {
         client.send(orderUpdateMessage);
       }
@@ -697,9 +702,7 @@ export const updateOrderToPaid = async (req, res) => {
       });
 
       wss.clients.forEach((client) => {
-        if (
-          client.readyState === WS_OPEN 
-        ) {
+        if (client.readyState === WS_OPEN) {
           client.send(alertMessage);
         }
       });

@@ -9,6 +9,7 @@ import {
   getProductReviews,
   getSingleProduct,
   toggleColorAvailability,
+  toggleSizeAvailability,
   updateProductDiscount,
   updateProductPrice,
 } from "../controllers/productController.js";
@@ -35,6 +36,11 @@ productRoute.patch(
   "/:id/color/:colorId/toggle",
   protectAdmin,
   toggleColorAvailability
+);
+productRoute.patch(
+  "/:id/size/:colorId/toggle",
+  protectAdmin,
+  toggleSizeAvailability
 );
 
 // change pricing

@@ -64,7 +64,16 @@ export const createProduct = async (req, res) => {
       );
     }
 
-    const parsedSizes = sizes ? JSON.parse(sizes) : [];
+    let parsedSizes = [];
+
+    if (sizes) {
+      const temp = JSON.parse(sizes);
+      parsedSizes = temp.map((c) =>
+        typeof c === "string"
+          ? { name: c, available: true }
+          : { ...c, available: c.available ?? true }
+      );
+    }
 
     // ✅ Create product
     const product = await Product.create({
@@ -125,10 +134,10 @@ export const getAllProducts = async (req, res) => {
       sort,
     } = req.query;
 
-  if (Number(limit) === 0) {
-    const all = await Product.find({});
-    return res.json({ products: all });
-  }
+    if (Number(limit) === 0) {
+      const all = await Product.find({});
+      return res.json({ products: all });
+    }
 
     const skip = (page - 1) * limit;
 
@@ -241,6 +250,35 @@ export const addProductColor = async (req, res) => {
   }
 };
 
+export const toggleSizeAvailability = async (req, res) => {
+  try {
+    const { productId, szield } = req.params;
+    const product = await Product.findById(productId);
+    if (!product) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Product not found" });
+    }
+
+    const size = product.sizes.id(szield);
+    if (!size) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Size not found" });
+    }
+
+    size.available = !size.available;
+    await product.save();
+
+    res.status(200).json({
+      success: true,
+      message: `Size ${size.available ? "enabled" : "disabled"} successfully`,
+      sizes: product.sizes,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
 export const toggleColorAvailability = async (req, res) => {
   try {
     const { productId, colorId } = req.params;
