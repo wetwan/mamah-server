@@ -7,6 +7,16 @@ const WS_OPEN = 1;
 
 const pendingOrderTimers = new Map();
 
+const broadcast = (message, filterFn) => {
+  if (!wss.clients) return;
+
+  wss.clients.forEach((client) => {
+    if (client.readyState === WS_OPEN && (!filterFn || filterFn(client))) {
+      client.send(JSON.stringify(message));
+    }
+  });
+};
+
 const cleanupPendingOrder = (orderId) => {
   const DELAY_MS = 10 * 60 * 1000; // 10 minutes
 
@@ -148,7 +158,6 @@ export const createOrder = async (req, res) => {
       totalPrice,
       status,
       createdBy: req.user._id,
-      creatorModel: req.user.role === "admin" ? "Admin" : "User",
     });
 
     try {
@@ -182,43 +191,52 @@ export const createOrder = async (req, res) => {
         );
       }
 
-      const newOrderMessage = JSON.stringify({
+      const notificationData = {
         type: "NEW_ORDER",
-        orderId: order._id,
-        userId: order.user,
-        totalPrice: order.totalPrice,
-        status: order.status,
+        title: `New Order #${order._id.toString().slice(-4)}`,
+        message: `Total: $${order.totalPrice}`,
+        relatedId: order._id.toString(),
+        user: req.user._id, // For admins/sales
+      };
+
+      await Notification.create(notificationData);
+
+      const message = {
+        ...notificationData,
         timestamp: new Date().toISOString(),
-      });
+      };
 
-      wss.clients.forEach((client) => {
-        if (
-          client.readyState === WS_OPEN &&
-          (client.userRole === "admin" ||
-            client.userRole === "sales" ||
-            client.userId?.toString() === order.user.toString())
-        ) {
-          client.send(newOrderMessage);
-        }
-      });
+      // Send to admins, sales, and the user who created the order
+      broadcast(
+        message,
+        (client) =>
+          client.userRole === "admin" ||
+          client.userRole === "sales" ||
+          client.userId?.toString() === req.user._id.toString()
+      );
 
-      if (lowStockAlerts.length > 0) {
-        const message = JSON.stringify({
+      async () => {
+        const notificationData = {
           type: "INVENTORY_ALERT",
-          alertCount: lowStockAlerts.length,
-          alerts: lowStockAlerts,
-          timestamp: new Date().toISOString(),
-        });
+          title: `Inventory Alert`,
+          message: `${alerts.length} product(s) are low in stock`,
+          relatedId: order._id.toString(),
+        };
 
-        wss.clients.forEach((client) => {
-          if (
-            client.readyState === WS_OPEN &&
-            (client.userRole === "admin" || client.userRole === "sales")
-          ) {
-            client.send(message);
-          }
-        });
-      }
+        await Notification.create(notificationData);
+
+        const message = {
+          ...notificationData,
+          alerts,
+          alertCount: alerts.length,
+          timestamp: new Date().toISOString(),
+        };
+
+        broadcast(
+          message,
+          (client) => client.userRole === "admin" || client.userRole === "sales"
+        );
+      };
 
       res.status(201).json({
         success: true,
@@ -642,22 +660,6 @@ export const updateOrderToPaid = async (req, res) => {
       });
     }
 
-    // Verify payment with Stripe (make sure you have Stripe imported)
-    // const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-    // const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
-
-    // if (paymentIntent.status !== "succeeded") {
-    //   return res.status(400).json({
-    //     success: false,
-    //     message: "Payment intent status is not succeeded.",
-    //   });
-    // }
-
-    // if (paymentIntent.amount !== Math.round(order.totalPrice * 100)) {
-    //   return res
-    //     .status(400)
-    //     .json({ success: false, message: "Payment amount mismatch." });
-    // }
 
     const lowStockAlerts = [];
     const LOW_STOCK_THRESHOLD = 5;
@@ -697,42 +699,54 @@ export const updateOrderToPaid = async (req, res) => {
     };
     await order.save();
 
-    // Send WebSocket notifications
-    const orderUpdateMessage = JSON.stringify({
-      type: "ORDER_STATUS_UPDATE",
-      orderId: order._id,
-      userId: order.user,
-      status: order.status,
-      paymentMethod: order.paymentMethod,
-      timestamp: new Date().toISOString(),
-    });
+    async (order) => {
+      const notificationData = {
+        type: "NEW_ORDER",
+        title: `New Order #${order._id.toString().slice(-4)}`,
+        message: `Total: $${order.totalPrice}`,
+        relatedId: order._id.toString(),
+        user: req.user._id,
+      };
 
-    wss.clients.forEach((client) => {
-      if (
-        client.readyState === WS_OPEN &&
-        (client.userRole === "admin" ||
-          client.userRole === "sales" ||
-          client.userId?.toString() === order.user.toString())
-      ) {
-        client.send(orderUpdateMessage);
-      }
-    });
+      await Notification.create(notificationData);
 
-    // Send inventory alerts if needed
-    if (lowStockAlerts.length > 0) {
-      const alertMessage = JSON.stringify({
-        type: "INVENTORY_ALERT",
-        alertCount: lowStockAlerts.length,
-        alerts: lowStockAlerts,
+      const message = {
+        ...notificationData,
         timestamp: new Date().toISOString(),
-      });
+      };
 
-      wss.clients.forEach((client) => {
-        if (client.readyState === WS_OPEN) {
-          client.send(alertMessage);
-        }
-      });
-    }
+      // Send to admins, sales, and the user who created the order
+      broadcast(
+        message,
+        (client) =>
+          client.userRole === "admin" ||
+          client.userRole === "sales" ||
+          client.userId?.toString() === order.user.toString()
+      );
+    };
+    async (alerts) => {
+      const notificationData = {
+        type: "INVENTORY_ALERT",
+        title: `Inventory Alert`,
+        message: `${alerts.length} product(s) are low in stock`,
+        relatedId: order._id.toString(),
+        user,
+      };
+
+      await Notification.create(notificationData);
+
+      const message = {
+        ...notificationData,
+        alerts,
+        alertCount: alerts.length,
+        timestamp: new Date().toISOString(),
+      };
+
+      broadcast(
+        message,
+        (client) => client.userRole === "admin" || client.userRole === "sales"
+      );
+    };
 
     res.status(200).json({
       success: true,

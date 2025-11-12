@@ -6,6 +6,16 @@ import { Notification } from "../models/notification.js";
 
 const WS_OPEN = 1;
 
+const broadcast = (message, filterFn) => {
+  if (!wss.clients) return;
+
+  wss.clients.forEach((client) => {
+    if (client.readyState === WS_OPEN && (!filterFn || filterFn(client))) {
+      client.send(JSON.stringify(message));
+    }
+  });
+};
+
 export const createProduct = async (req, res) => {
   try {
     const {
@@ -89,36 +99,29 @@ export const createProduct = async (req, res) => {
       postedby: req.admin._id,
     });
 
-    const newProductMessage = JSON.stringify({
-      type: "NEW_PRODUCT_CREATED",
-      productId: product._id,
-      productName: product.name,
-      category: product.category,
-      stockLevel: product.stock,
-      postedBy: req.admin._id,
-      timestamp: new Date().toISOString(),
-    });
-
-      const notificationData = {
+    const notificationData = JSON.stringify({
       type: "NEW_PRODUCT_CREATED",
       title: `New Product: ${product.name}`,
       message: `A new product was added to category ${product.category}`,
       relatedId: product._id.toString(),
       isGlobal: true,
-    };
+    });
 
-    
-  
     await Notification.create(notificationData);
 
-    if (wss.clients) {
-      // Safety check
-      wss.clients.forEach((client) => {
-        if (client.readyState === WS_OPEN) {
-          client.send(newProductMessage);
-        }
-      });
-    }
+    const message = {
+      ...notificationData,
+      timestamp: new Date().toISOString(),
+    };
+
+    // Send to all open connections (admins, sales)
+    broadcast(
+      message,
+      (client) =>
+        client.userRole === "admin" ||
+        client.userRole === "sales" ||
+        client.userRole === "shopper"
+    );
 
     res.status(201).json({
       success: true,
@@ -189,7 +192,8 @@ export const getAllProducts = async (req, res) => {
     const products = await Product.find(query)
       .sort(sortOption)
       .skip(skip)
-      .limit(Number(limit));
+      .limit(Number(limit))
+      .sort({ timestamp: -1 });
 
     const total = await Product.countDocuments(query);
 
