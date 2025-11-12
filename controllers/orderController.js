@@ -56,7 +56,7 @@ const cleanupPendingOrder = (orderId) => {
           type: "ORDER_CANCELLED",
           orderId: orderId,
           reason: "Payment timeout (10 mins)",
-          timestamp: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
         });
 
         wss.clients.forEach((client) => {
@@ -202,7 +202,7 @@ export const createOrder = async (req, res) => {
           title: `New Order #${order._id.toString().slice(-4)}`,
           message: `Total: $${order.totalPrice}`,
           relatedId: order._id.toString(),
-          timestamp: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
         },
         (client) =>
           client.userRole === "admin" ||
@@ -224,7 +224,7 @@ export const createOrder = async (req, res) => {
           {
             ...alertData,
             alerts: lowStockAlerts,
-            timestamp: new Date().toISOString(),
+            createdAt: new Date().toISOString(),
           },
           (client) => client.userRole === "admin" || client.userRole === "sales"
         );
@@ -327,7 +327,7 @@ export const performScheduledOrderCleanup = async () => {
           type: "ORDER_CANCELLED",
           orderId: order._id,
           reason: "Scheduled payment timeout cleanup (15+ mins)",
-          timestamp: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
         });
 
         wss.clients.forEach((client) => {
@@ -477,7 +477,7 @@ export const updateOrderStatus = async (req, res) => {
         userId: order.user,
         oldStatus: oldStatus,
         newStatus: order.status,
-        timestamp: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
       });
 
       wss.clients.forEach((client) => {
@@ -687,7 +687,7 @@ export const updateOrderToPaid = async (req, res) => {
 
       const message = {
         ...notificationData,
-        timestamp: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
       };
 
       // Send to admins, sales, and the user who created the order
@@ -699,22 +699,22 @@ export const updateOrderToPaid = async (req, res) => {
           client.userId?.toString() === order.user.toString()
       );
     }
-    if (lowStockAlerts.length < 6) {
+    if (lowStockAlerts.length > 0) {
       const notificationData = {
         type: "INVENTORY_ALERT",
-        title: `Inventory Alert`,
-        message: `${alerts.length} product(s) are low in stock`,
+        title: "Inventory Alert",
+        message: `${lowStockAlerts.length} product(s) are low in stock`,
         relatedId: order._id.toString(),
-        user,
+        user: req.user._id,
       };
 
       await Notification.create(notificationData);
 
       const message = {
         ...notificationData,
-        alerts,
-        alertCount: alerts.length,
-        timestamp: new Date().toISOString(),
+        alerts: lowStockAlerts,
+        alertCount: lowStockAlerts.length,
+        createdAt: new Date().toISOString(),
       };
 
       broadcast(
