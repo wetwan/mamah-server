@@ -4,10 +4,10 @@ const notificationSchema = new mongoose.Schema({
   type: { type: String, required: true },
   title: String,
   message: String,
-  relatedId: String, // orderId or productId
-  userIds: [String], // who should see this notification
+  relatedId: String, // productId, orderId, etc.
+  userIds: [String], // specific users; empty = global
   createdAt: { type: Date, default: Date.now },
-  isGlobal: { type: Boolean, default: false }, // true = all users see
+  isGlobal: { type: Boolean, default: true }, // true = all users see
 });
 
 export const Notification = mongoose.model("Notification", notificationSchema);

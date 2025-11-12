@@ -98,10 +98,18 @@ export const createProduct = async (req, res) => {
       postedBy: req.admin._id,
       timestamp: new Date().toISOString(),
     });
-    await Notification.create({
-      ...newProductMessage,
+
+      const notificationData = {
+      type: "NEW_PRODUCT_CREATED",
+      title: `New Product: ${product.name}`,
+      message: `A new product was added to category ${product.category}`,
+      relatedId: product._id.toString(),
       isGlobal: true,
-    });
+    };
+
+    
+  
+    await Notification.create(notificationData);
 
     if (wss.clients) {
       // Safety check
