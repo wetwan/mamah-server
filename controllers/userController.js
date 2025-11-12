@@ -58,6 +58,7 @@ export const registerUser = async (req, res) => {
       password: hashedPassword,
       phone,
       address,
+      role: "shopper",
     });
 
     await user.save();

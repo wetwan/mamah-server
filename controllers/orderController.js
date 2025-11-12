@@ -50,7 +50,10 @@ const cleanupPendingOrder = (orderId) => {
         });
 
         wss.clients.forEach((client) => {
-          if (client.readyState === WS_OPEN && client.userRole === "admin") {
+          if (
+            client.readyState === WS_OPEN &&
+            client.userRole === ("admin" || "sales")
+          ) {
             client.send(cancellationMessage);
           }
         });
@@ -171,7 +174,10 @@ export const createOrder = async (req, res) => {
       });
 
       wss.clients.forEach((client) => {
-        if (client.readyState === WS_OPEN && client.userRole === "admin") {
+        if (
+          client.readyState === WS_OPEN &&
+          client.userRole === ("admin" || "sales")
+        ) {
           client.send(newOrderMessage);
         }
       });
@@ -185,7 +191,10 @@ export const createOrder = async (req, res) => {
         });
 
         wss.clients.forEach((client) => {
-          if (client.readyState === WS_OPEN && client.userRole === "admin") {
+          if (
+            client.readyState === WS_OPEN &&
+            client.userRole === ("admin" || "sales")
+          ) {
             client.send(message);
           }
         });
@@ -301,7 +310,10 @@ export const performScheduledOrderCleanup = async () => {
         });
 
         wss.clients.forEach((client) => {
-          if (client.readyState === WS_OPEN && client.userRole === "admin") {
+          if (
+            client.readyState === WS_OPEN &&
+            client.userRole === ("admin" || "sales")
+          ) {
             client.send(cancellationMessage);
           }
         });
@@ -543,7 +555,7 @@ export const getAllOrders = async (req, res) => {
   }
 };
 
-// Helper function to avoid duplicate code
+
 const getStatusCounts = async (filter) => {
   const statusSummary = await Order.aggregate([
     { $match: filter },
@@ -579,112 +591,6 @@ export const getSingleOrder = async (req, res) => {
     });
   }
 };
-
-// export const updateOrderToPaid = async (req, res) => {
-//   const orderId = req.params.id;
-//   const { paymentIntentId } = req.body; // Sent from frontend after Stripe success
-
-//   try {
-//     const order = await Order.findById(orderId).populate("items.product");
-
-//     if (!order) {
-//       return res
-//         .status(404)
-//         .json({ success: false, message: "Order not found" });
-//     }
-
-//     if (order.paymentMethod !== "card" || order.status !== "pending") {
-//       return res.status(400).json({
-//         success: false,
-//         message:
-//           "Order status or payment method invalid for card payment update.",
-//       });
-//     }
-//     order.status = "processing";
-//     const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
-
-//     if (paymentIntent.status !== "succeeded") {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Payment intent status is not succeeded.",
-//       });
-//     }
-
-//     if (paymentIntent.amount !== Math.round(order.totalPrice * 100)) {
-//       return res
-//         .status(400)
-//         .json({ success: false, message: "Payment amount mismatch." });
-//     }
-
-//     const lowStockAlerts = [];
-//     const LOW_STOCK_THRESHOLD = 5;
-
-//     await Promise.all(
-//       order.items.map(async (item) => {
-//         const product = await Product.findById(item.product._id);
-//         if (product) {
-//           if (product.stock < item.quantity) {
-//             throw new Error(
-//               `Insufficient stock for ${product.name}. Cannot fulfill order.`
-//             );
-//           }
-
-//           product.stock = Math.max(0, product.stock - item.quantity);
-//           await product.save();
-
-//           if (product.stock <= LOW_STOCK_THRESHOLD) {
-//             lowStockAlerts.push({
-//               productId: product._id,
-//               productName: product.name,
-//               currentStock: product.stock,
-//             });
-//           }
-//         }
-//       })
-//     );
-
-//     order.status = "pending";
-//     order.paidAt = new Date(Date.now());
-//     order.paymentResult = {
-//       id: paymentIntentId,
-//       status: "succeeded",
-//       // email_address: paymentIntent.receipt_email,
-//     };
-//     await order.save();
-
-//     const orderUpdateMessage = JSON.stringify({
-//       type: "ORDER_STATUS_UPDATE",
-//       orderId: order._id,
-//       status: order.status,
-//       paymentMethod: order.paymentMethod,
-//       timestamp: new Date(Date.now()).toISOString(),
-//     });
-
-//     wss.clients.forEach((client) => {
-//       if (client.readyState === WS_OPEN && client.userRole === "admin") {
-//         client.send(orderUpdateMessage);
-//       }
-//     });
-
-//     sendInventoryAlerts(lowStockAlerts);
-
-//     res.status(200).json({
-//       success: true,
-//       message: "Order successfully paid and processed.",
-//       order,
-//     });
-//   } catch (error) {
-//     console.error(
-//       "❌ Error processing payment and updating order:",
-//       error.message
-//     );
-//     res.status(500).json({
-//       success: false,
-//       message:
-//         error.message || "Failed to finalize payment and order processing.",
-//     });
-//   }
-// };
 
 export const updateOrderToPaid = async (req, res) => {
   const orderId = req.params.id;
@@ -774,7 +680,10 @@ export const updateOrderToPaid = async (req, res) => {
     });
 
     wss.clients.forEach((client) => {
-      if (client.readyState === WS_OPEN && client.userRole === "admin") {
+      if (
+        client.readyState === WS_OPEN &&
+        client.userRole === ("admin" || "sales")
+      ) {
         client.send(orderUpdateMessage);
       }
     });
@@ -789,7 +698,10 @@ export const updateOrderToPaid = async (req, res) => {
       });
 
       wss.clients.forEach((client) => {
-        if (client.readyState === WS_OPEN && client.userRole === "admin") {
+        if (
+          client.readyState === WS_OPEN &&
+          client.userRole === ("admin" || "sales")
+        ) {
           client.send(alertMessage);
         }
       });

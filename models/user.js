@@ -8,9 +8,10 @@ const userSchema = new mongoose.Schema({
   address: { type: String },
   password: { type: String, required: true },
   stripeCustomerId: { type: String },
+  role: { type: String, default: "shopper" },
 });
 
-userSchema.virtual('fullName').get(function () {
+userSchema.virtual("fullName").get(function () {
   return `${this.firstName} ${this.lastName}`;
 });
 
