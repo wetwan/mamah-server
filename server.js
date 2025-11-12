@@ -16,8 +16,9 @@ import orderRouter from "./routes/orderRoute.js";
 import { stripeWebhook } from "./controllers/stripeWebhook.js";
 import stripeRouter from "./routes/stripeRoute.js";
 import { Notification } from "./models/notification.js";
-import { authenticateWebSocket } from "./middleware/wsAuth.js";
+
 import noficationRouter from "./routes/notification.js";
+import { authenticateWebSocket } from "./middlewares/webSocket.js";
 
 dotenv.config();
 
@@ -27,7 +28,6 @@ const PORT = process.env.PORT || 5000;
 const server = http.createServer(app);
 export const wss = new WebSocketServer({ server });
 let connectedClients = 0;
-
 
 wss.on("connection", async (ws, req) => {
   connectedClients++;

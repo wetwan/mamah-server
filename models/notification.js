@@ -1,5 +1,4 @@
 import mongoose from "mongoose";
-import { ref } from "process";
 
 const notificationSchema = new mongoose.Schema({
   type: {
@@ -24,7 +23,7 @@ const notificationSchema = new mongoose.Schema({
   relatedId: String, // orderId / productId etc
   isRead: { type: Boolean, default: false },
   timestamp: { type: Date, default: Date.now },
-  isGlobal: { type: Boolean, default: false }, 
+  isGlobal: { type: Boolean, default: false },
 });
 
 export const Notification = mongoose.model("Notification", notificationSchema);
