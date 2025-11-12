@@ -65,7 +65,6 @@ export const createProduct = async (req, res) => {
     }
 
     let parsedSizes = [];
-
     if (sizes) {
       const temp = JSON.parse(sizes);
       parsedSizes = temp.map((c) =>
