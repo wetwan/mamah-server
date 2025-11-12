@@ -25,38 +25,38 @@ const server = http.createServer(app);
 export const wss = new WebSocketServer({ server });
 
 wss.on("connection", (ws, req) => {
-    console.log("✅ New WebSocket client connected");
+  console.log("✅ New WebSocket client connected");
 
-    // NOTE: authenticateUser(req) must be able to read authentication 
-    // data (e.g., token from cookies or query string) from the handshake request.
-    const user = authenticateUser(req); 
+  // NOTE: authenticateUser(req) must be able to read authentication
+  // data (e.g., token from cookies or query string) from the handshake request.
+  const user = authenticateUser(req);
 
-    if (user) {
-        // Assign role if authenticated
-        ws.userRole = user.role;
-        console.log(`User connected with role: ${user.role}`);
-    } else {
-        // Default to 'guest' if unauthenticated
-        ws.userRole = "guest";
-        console.log("Guest connected.");
-    }
+  if (user) {
+    // Assign role if authenticated
+    ws.userId = user._id;
+    ws.userRole = user.role;
+    console.log(`User connected with role: ${user.role}`);
+  } else {
+    // Default to 'guest' if unauthenticated
+    ws.userRole = "guest";
+    console.log("Guest connected.");
+  }
 
+  ws.send("Welcome to the WebSocket server!");
 
-    ws.send("Welcome to the WebSocket server!");
+  // The 'message' listener is now only for processing incoming data.
+  ws.on("message", (message) => {
+    const msg = message.toString();
+    console.log(`Received: ${msg}`);
+    // Echo back to the sender
+    ws.send(`Server received: ${msg}`);
 
-    // The 'message' listener is now only for processing incoming data.
-    ws.on("message", (message) => {
-        const msg = message.toString();
-        console.log(`Received: ${msg}`);
-        // Echo back to the sender
-        ws.send(`Server received: ${msg}`);
+    // DO NOT re-authenticate here. The role is already set.
+  });
 
-        // DO NOT re-authenticate here. The role is already set.
-    });
-
-    ws.on("close", () => {
-        console.log("❌ WebSocket client disconnected");
-    });
+  ws.on("close", () => {
+    console.log("❌ WebSocket client disconnected");
+  });
 });
 
 // Connect to MongoDB first, then start server
@@ -73,7 +73,7 @@ wss.on("connection", (ws, req) => {
     );
 
     app.use(express.json());
-   
+
     app.get("/", (req, res) => res.send("API Working"));
     app.use("/api/stripe", stripeRouter);
     app.use("/api/user", userRoute);
