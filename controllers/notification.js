@@ -1,6 +1,7 @@
 // your mongoose model
 
 import { Notification } from "../models/notification.js";
+import User from "../models/user.js";
 
 export const getUserNotifications = async (req, res) => {
   try {
@@ -42,65 +43,67 @@ export const getUserNotifications = async (req, res) => {
 
 export const markNotificationAsRead = async (req, res) => {
   try {
-    const notification = await Notification.findById(req.params.id);
-
-    if (!notification)
-      return res
-        .status(404)
-        .json({ success: false, message: "Notification not found" });
-
-    if (
-      notification.user &&
-      notification.user.toString() !== req.user._id.toString()
-    ) {
-      return res
-        .status(403)
-        .json({ success: false, message: "Not authorized" });
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
     }
 
+    const notification = await Notification.findById(req.params.id);
+    if (!notification) {
+      return res.status(404).json({ success: false, message: "Notification not found" });
+    }
+
+    if (notification.user && notification.user.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ success: false, message: "Not authorized" });
+    }
+
+    // Mark as read by this user if not already
     if (!notification.readBy.includes(req.user._id)) {
       notification.readBy.push(req.user._id);
-
       await notification.save();
     }
 
+    // Count unread since the user joined
     const unreadCount = await Notification.countDocuments({
       $and: [
-        { timestamp: { $gte: userCreatedAt } },
-        {
-          $or: [{ user: req.user._id }, { isGlobal: true }],
-        },
-        { isRead: false },
+        { timestamp: { $gte: user.createdAt } },
+        { $or: [{ user: req.user._id }, { isGlobal: true }] },
+        { readBy: { $ne: req.user._id } }, // user hasn’t read it yet
       ],
     });
 
     res.json({ success: true, notification, unreadCount });
   } catch (err) {
+    console.error("Error marking notification as read:", err);
     res.status(500).json({ success: false, message: err.message });
   }
 };
 
 export const markAllNotificationsAsRead = async (req, res) => {
   try {
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
     const notifications = await Notification.find({
       $or: [{ user: req.user._id }, { isGlobal: true }],
       readBy: { $ne: req.user._id },
+      timestamp: { $gte: user.createdAt }, // only notifications since they joined
     });
 
     await Promise.all(
-      notifications.map(async (notification) => {
-        notification.readBy.push(req.user._id);
-        await notification.save();
+      notifications.map(async (n) => {
+        n.readBy.push(req.user._id);
+        await n.save();
       })
     );
 
     const unreadCount = await Notification.countDocuments({
       $and: [
-        { timestamp: { $gte: userCreatedAt } },
-        {
-          $or: [{ user: req.user._id }, { isGlobal: true }],
-        },
-        { isRead: false },
+        { timestamp: { $gte: user.createdAt } },
+        { $or: [{ user: req.user._id }, { isGlobal: true }] },
+        { readBy: { $ne: req.user._id } },
       ],
     });
 
@@ -110,6 +113,7 @@ export const markAllNotificationsAsRead = async (req, res) => {
       unreadCount,
     });
   } catch (err) {
+    console.error("Error marking all notifications as read:", err);
     res.status(500).json({ success: false, message: err.message });
   }
 };
