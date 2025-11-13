@@ -285,13 +285,13 @@ export const toggleSizeAvailability = async (req, res) => {
     size.available = !size.available;
     await product.save();
 
-    const notificationData = JSON.stringify({
+    const notificationData = {
       type: "NEW_PRODUCT_UPDATED",
-      title: `New Product: ${product.name}`,
+      title: `Product: ${product.name}`,
       message: `A product size was updated`,
       relatedId: product._id.toString(),
       isGlobal: true,
-    });
+    };
 
     await Notification.create(notificationData);
 
@@ -299,13 +299,8 @@ export const toggleSizeAvailability = async (req, res) => {
       ...notificationData,
       timestamp: new Date().toISOString(),
     };
-
-    broadcast(
-      message,
-      (client) =>
-        client.userRole === "admin" ||
-        client.userRole === "sales" ||
-        client.userRole === "shopper"
+    broadcast(message, (client) =>
+      ["admin", "sales", "shopper"].includes(client.userRole)
     );
 
     res.status(200).json({
@@ -337,13 +332,13 @@ export const toggleColorAvailability = async (req, res) => {
     color.available = !color.available;
     await product.save();
 
-    const notificationData = JSON.stringify({
+    const notificationData = {
       type: "NEW_PRODUCT_UPDATED",
-      title: `New Product: ${product.name}`,
+      title: `Product: ${product.name}`,
       message: `A product color was updated`,
       relatedId: product._id.toString(),
       isGlobal: true,
-    });
+    };
 
     await Notification.create(notificationData);
 
@@ -351,13 +346,8 @@ export const toggleColorAvailability = async (req, res) => {
       ...notificationData,
       timestamp: new Date().toISOString(),
     };
-
-    broadcast(
-      message,
-      (client) =>
-        client.userRole === "admin" ||
-        client.userRole === "sales" ||
-        client.userRole === "shopper"
+    broadcast(message, (client) =>
+      ["admin", "sales", "shopper"].includes(client.userRole)
     );
 
     res.status(200).json({

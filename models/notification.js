@@ -9,6 +9,12 @@ const notificationSchema = new mongoose.Schema({
       "INVENTORY_ALERT",
       "NEW_PRODUCT_CREATED",
       "NEW_ORDER",
+      "USER_LOGIN",
+      "NEW_PRODUCT_UPDATED",
+      "NEW_USER_CREATED",
+      "NEW_ORDER_PAYMENT",
+      "ORDER_STATUS_UPDATE",
+      
     ],
     required: true,
   },
