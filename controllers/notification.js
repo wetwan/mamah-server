@@ -9,18 +9,13 @@ export const getUserNotifications = async (req, res) => {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
-    // Get user registration date
     const userCreatedAt = req.user.createdAt;
 
-    // Fetch notifications after registration
     const notifications = await Notification.find({
       $and: [
         { timestamp: { $gte: userCreatedAt } },
         {
-          $or: [
-            { user: req.user._id }, // personal
-            { isGlobal: true }, // global
-          ],
+          $or: [{ user: req.user._id }, { isGlobal: true }],
         },
       ],
     })
