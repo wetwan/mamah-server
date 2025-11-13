@@ -285,6 +285,29 @@ export const toggleSizeAvailability = async (req, res) => {
     size.available = !size.available;
     await product.save();
 
+    const notificationData = JSON.stringify({
+      type: "NEW_PRODUCT_UPDATED",
+      title: `New Product: ${product.name}`,
+      message: `A product size was updated`,
+      relatedId: product._id.toString(),
+      isGlobal: true,
+    });
+
+    await Notification.create(notificationData);
+
+    const message = {
+      ...notificationData,
+      timestamp: new Date().toISOString(),
+    };
+
+    broadcast(
+      message,
+      (client) =>
+        client.userRole === "admin" ||
+        client.userRole === "sales" ||
+        client.userRole === "shopper"
+    );
+
     res.status(200).json({
       success: true,
       message: `Size ${size.available ? "enabled" : "disabled"} successfully`,
@@ -313,6 +336,29 @@ export const toggleColorAvailability = async (req, res) => {
 
     color.available = !color.available;
     await product.save();
+
+    const notificationData = JSON.stringify({
+      type: "NEW_PRODUCT_UPDATED",
+      title: `New Product: ${product.name}`,
+      message: `A product color was updated`,
+      relatedId: product._id.toString(),
+      isGlobal: true,
+    });
+
+    await Notification.create(notificationData);
+
+    const message = {
+      ...notificationData,
+      timestamp: new Date().toISOString(),
+    };
+
+    broadcast(
+      message,
+      (client) =>
+        client.userRole === "admin" ||
+        client.userRole === "sales" ||
+        client.userRole === "shopper"
+    );
 
     res.status(200).json({
       success: true,
@@ -355,6 +401,29 @@ export const updateProductDiscount = async (req, res) => {
     product.discount = discount;
     await product.save();
 
+    const notificationData = JSON.stringify({
+      type: "NEW_PRODUCT_UPDATED",
+      title: `New Product: ${product.name}`,
+      message: `A product discount was updated`,
+      relatedId: product._id.toString(),
+      isGlobal: true,
+    });
+
+    await Notification.create(notificationData);
+
+    const message = {
+      ...notificationData,
+      timestamp: new Date().toISOString(),
+    };
+
+    broadcast(
+      message,
+      (client) =>
+        client.userRole === "admin" ||
+        client.userRole === "sales" ||
+        client.userRole === "shopper"
+    );
+
     res.status(200).json({
       success: true,
       message: "Product discount updated successfully",
@@ -396,6 +465,29 @@ export const updateProductPrice = async (req, res) => {
     product.price = price;
     product.discount = 0;
     await product.save();
+
+    const notificationData = JSON.stringify({
+      type: "NEW_PRODUCT_UPDATED",
+      title: `New Product: ${product.name}`,
+      message: `A product price was updated`,
+      relatedId: product._id.toString(),
+      isGlobal: true,
+    });
+
+    await Notification.create(notificationData);
+
+    const message = {
+      ...notificationData,
+      timestamp: new Date().toISOString(),
+    };
+
+    broadcast(
+      message,
+      (client) =>
+        client.userRole === "admin" ||
+        client.userRole === "sales" ||
+        client.userRole === "shopper"
+    );
 
     res.status(200).json({
       success: true,

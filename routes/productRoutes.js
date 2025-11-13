@@ -28,17 +28,17 @@ productRoute.post(
   createProduct
 );
 productRoute.get("/all", getAllProducts);
-productRoute.get("/:id",  getSingleProduct);
+productRoute.get("/:id", getSingleProduct);
 
 // change color
 productRoute.post("/:id/color", protectAdmin, addProductColor);
 productRoute.patch(
-  "/:id/color/:colorId/toggle",
+  "/:id/:colorId/toggle",
   protectAdmin,
   toggleColorAvailability
 );
 productRoute.patch(
-  "/:id/size/:colorId/toggle",
+  "/:id/:colorId/toggle",
   protectAdmin,
   toggleSizeAvailability
 );

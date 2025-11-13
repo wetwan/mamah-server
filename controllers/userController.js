@@ -3,6 +3,22 @@ import generateToken from "../utils/generateToken.js";
 import validator from "validator";
 import bcrypt from "bcrypt";
 
+import { wss } from "../server.js";
+import { Notification } from "../models/notification.js";
+import Admin from "../models/admin.js";
+
+const WS_OPEN = 1;
+
+const broadcast = (message, filterFn) => {
+  if (!wss.clients) return;
+
+  wss.clients.forEach((client) => {
+    if (client.readyState === WS_OPEN && (!filterFn || filterFn(client))) {
+      client.send(JSON.stringify(message));
+    }
+  });
+};
+
 export const registerUser = async (req, res) => {
   const { firstName, lastName, email, password, phone, address } = req.body;
 
@@ -63,10 +79,34 @@ export const registerUser = async (req, res) => {
 
     await user.save();
 
+    const notificationData = JSON.stringify({
+      type: "NEW_UER_UPDATED",
+      title: `New uSer: ${user.firstName + user.lastName}`,
+      message: "User created successfully",
+      relatedId: user._id.toString(),
+      user: user._id,
+      admin: Admin.role === "admin",
+    });
+
+    await Notification.create(notificationData);
+
+    const message = {
+      ...notificationData,
+      timestamp: new Date().toISOString(),
+    };
+
+    broadcast(
+      message,
+      (client) =>
+        client.userRole === "admin" ||
+        client.userRole === "sales" ||
+        client.userId?.toString() === user_id.toString()
+    );
+
     res.status(201).json({
       success: true,
       user,
-      token: generateToken(user._id), // ✅ issue token after registration
+      token: generateToken(user._id), 
       message: "User created successfully",
     });
   } catch (error) {
@@ -98,6 +138,26 @@ export const loginUser = async (req, res) => {
         .status(401)
         .json({ success: false, message: "Invalid email or password" });
     }
+
+    const notificationData = JSON.stringify({
+      type: "USER_LOGIN",
+      title: `User login`,
+      message: "Logged in successfully",
+      relatedId: user._id.toString(),
+      user: user._id,
+    });
+
+    await Notification.create(notificationData);
+
+    const message = {
+      ...notificationData,
+      timestamp: new Date().toISOString(),
+    };
+
+    broadcast(
+      message,
+      (client) => client.userId?.toString() === user_id.toString()
+    );
 
     res.json({
       success: true,

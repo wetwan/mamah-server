@@ -49,6 +49,16 @@ export const cleanupPendingOrder = (orderId) => {
           `✅ [Timer Cleanup] Order ${orderId} deleted and stock reverted.`
         );
 
+        await Notification.create({
+          type: "ORDER_CANCELLED",
+          title: "❌ Order Cancelled: Payment Failed",
+          message: `Your pending card payment order #${orderId.slice(
+            -4
+          )} timed out after 15 minutes and was cancelled. Please re-order if necessary.`,
+          relatedId: order._id.toString(),
+          user: order.user,
+        });
+
         const cancellationMessage = JSON.stringify({
           type: "ORDER_CANCELLED",
           orderId: orderId,
@@ -133,7 +143,15 @@ export const performScheduledOrderCleanup = async () => {
 
         cancelPendingOrderCleanup(order._id);
 
-        console.log(`   - Cleaned up and deleted expired order: ${order._id}`);
+        await Notification.create({
+          type: "ORDER_CANCELLED",
+          title: "❌ Order Cancelled: Payment Failed",
+          message: `Your pending card payment order #${orderId.slice(
+            -4
+          )} timed out after 15 minutes and was cancelled. Please re-order if necessary.`,
+          relatedId: order._id.toString(),
+          user: order.user,
+        });
 
         const cancellationMessage = JSON.stringify({
           type: "ORDER_CANCELLED",
@@ -168,6 +186,7 @@ export const performScheduledOrderCleanup = async () => {
     );
   }
 };
+
 export const createOrder = async (req, res) => {
   let order = null;
   let isStockReduced = false;
@@ -413,14 +432,7 @@ export const getUserOrders = async (req, res) => {
 
 export const updateOrderStatus = async (req, res) => {
   try {
-    // const authHeader = req.headers["authorization"];
-    // const token = authHeader && authHeader.split(" ")[1];
-
-    // if (!token) {
-    //   return res
-    //     .status(401)
-    //     .json({ success: false, message: "No token provided" });
-    // }
+  
     const { orderId } = req.params;
     const { status } = req.body;
 
@@ -456,7 +468,16 @@ export const updateOrderStatus = async (req, res) => {
 
     await order.save(); // Save the updated order
 
-    // --- 🔔 WebSocket Notification Logic ---
+    await Notification.create({
+      type: "ORDER_STATUS_UPDATE",
+      title: "✔️ Order status is updated",
+      message: `Your order with the ${orderId.slice(-4)} is updated to ${
+        order.status
+      }.`,
+      relatedId: order._id.toString(),
+      user: order.user,
+    });
+
     if (oldStatus !== status) {
       const message = JSON.stringify({
         type: "ORDER_STATUS_UPDATE",
@@ -664,8 +685,8 @@ export const updateOrderToPaid = async (req, res) => {
 
     if (order) {
       const notificationData = {
-        type: "NEW_ORDER",
-        title: `New Order #${order._id.toString().slice(-4)}`,
+        type: "NEW_ORDER_PAYMENT",
+        title: `Transaction sucessfull #${order._id.toString().slice(-4)}`,
         message: `Total: $${order.totalPrice}`,
         relatedId: order._id.toString(),
         user: req.user._id,
