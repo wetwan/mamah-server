@@ -7,7 +7,7 @@ import connectDB from "./config/db.js";
 import * as Sentry from "@sentry/node";
 import http from "http";
 import { WebSocketServer } from "ws";
-
+import cron from "node-cron";
 import userRoute from "./routes/userRoutes.js";
 import adminRoute from "./routes/adminRoutes.js";
 import productRoute from "./routes/productRoutes.js";
@@ -19,6 +19,7 @@ import { Notification } from "./models/notification.js";
 
 import noficationRouter from "./routes/notification.js";
 import { authenticateWebSocket } from "./middlewares/webSocket.js";
+import { performScheduledOrderCleanup } from "./controllers/orderController.js";
 
 dotenv.config();
 
@@ -28,6 +29,17 @@ const PORT = process.env.PORT || 5000;
 const server = http.createServer(app);
 export const wss = new WebSocketServer({ server });
 let connectedClients = 0;
+
+cron.schedule(
+  "*/15 * * * *",
+  () => {
+    performScheduledOrderCleanup();
+  },
+  {
+    scheduled: true,
+    timezone: "Etc/UTC", // Use a consistent timezone like UTC
+  }
+);
 
 wss.on("connection", async (ws, req) => {
   connectedClients++;
