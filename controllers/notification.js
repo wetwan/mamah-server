@@ -30,7 +30,7 @@ export const getUserNotifications = async (req, res) => {
         {
           $or: [{ user: req.user._id }, { isGlobal: true }],
         },
-        { isRead: false },
+        { readBy: { $ne: req.user._id } },
       ],
     });
 
@@ -45,16 +45,25 @@ export const markNotificationAsRead = async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
     if (!user) {
-      return res.status(404).json({ success: false, message: "User not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
     }
 
     const notification = await Notification.findById(req.params.id);
     if (!notification) {
-      return res.status(404).json({ success: false, message: "Notification not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Notification not found" });
     }
 
-    if (notification.user && notification.user.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ success: false, message: "Not authorized" });
+    if (
+      notification.user &&
+      notification.user.toString() !== req.user._id.toString()
+    ) {
+      return res
+        .status(403)
+        .json({ success: false, message: "Not authorized" });
     }
 
     // Mark as read by this user if not already
@@ -66,9 +75,11 @@ export const markNotificationAsRead = async (req, res) => {
     // Count unread since the user joined
     const unreadCount = await Notification.countDocuments({
       $and: [
-        { timestamp: { $gte: user.createdAt } },
-        { $or: [{ user: req.user._id }, { isGlobal: true }] },
-        { readBy: { $ne: req.user._id } }, // user hasn’t read it yet
+        { timestamp: { $gte: userCreatedAt } },
+        {
+          $or: [{ user: req.user._id }, { isGlobal: true }],
+        },
+        { readBy: { $ne: req.user._id } },
       ],
     });
 
@@ -83,7 +94,9 @@ export const markAllNotificationsAsRead = async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
     if (!user) {
-      return res.status(404).json({ success: false, message: "User not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
     }
 
     const notifications = await Notification.find({
