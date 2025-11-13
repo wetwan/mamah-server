@@ -672,7 +672,7 @@ export const updateOrderToPaid = async (req, res) => {
         relatedId: order._id.toString(),
         user: req.user._id,
         admin: Admin._id,
-        isGlobal: boolean;
+        isGlobal: true
 
       };
 
