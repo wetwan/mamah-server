@@ -77,18 +77,15 @@ export const cleanupPendingOrder = (orderId) => {
         error.message
       );
     } finally {
-
       pendingOrderTimers.delete(orderId.toString());
     }
   }, CLEANUP_DELAY_MS);
-
 
   pendingOrderTimers.set(orderId.toString(), timer);
   console.log(
     `⏱️ Scheduled immediate cleanup for order ${orderId} in 15 minutes.`
   );
 };
-
 
 export const cancelPendingOrderCleanup = (orderId) => {
   const orderIdStr = orderId.toString();
@@ -98,7 +95,6 @@ export const cancelPendingOrderCleanup = (orderId) => {
     console.log(`⏹️ Cancelled cleanup timer for order ${orderIdStr}`);
   }
 };
-
 
 export const performScheduledOrderCleanup = async () => {
   console.log(
@@ -124,7 +120,6 @@ export const performScheduledOrderCleanup = async () => {
 
     for (const order of expiredOrders) {
       try {
-  
         for (const item of order.items) {
           const product = await Product.findById(item.product);
           if (product) {
@@ -133,14 +128,12 @@ export const performScheduledOrderCleanup = async () => {
           }
         }
 
-    
         await Order.deleteOne({ _id: order._id });
 
         cancelPendingOrderCleanup(order._id);
 
         console.log(`   - Cleaned up and deleted expired order: ${order._id}`);
 
-    
         const cancellationMessage = JSON.stringify({
           type: "ORDER_CANCELLED",
           orderId: order._id,
@@ -163,7 +156,6 @@ export const performScheduledOrderCleanup = async () => {
           `❌ Error processing individual expired order ${order._id}:`,
           innerError.message
         );
-
       }
     }
 
@@ -271,7 +263,7 @@ export const createOrder = async (req, res) => {
         message: `Total: $${order.totalPrice}`,
         relatedId: order._id.toString(),
         user: req.user._id,
-        admin 
+        admin,
       });
 
       broadcast(
@@ -472,7 +464,7 @@ export const updateOrderStatus = async (req, res) => {
         oldStatus: oldStatus,
         newStatus: order.status,
         createdAt: new Date().toISOString(),
-        admin
+        admin,
       });
 
       wss.clients.forEach((client) => {
@@ -676,7 +668,7 @@ export const updateOrderToPaid = async (req, res) => {
         message: `Total: $${order.totalPrice}`,
         relatedId: order._id.toString(),
         user: req.user._id,
-        admin
+        admin,
       };
 
       await Notification.create(notificationData);
