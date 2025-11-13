@@ -1,3 +1,4 @@
+import Admin from "../models/admin.js";
 import { Notification } from "../models/notification.js";
 import Order from "../models/order.js";
 import Product from "../models/product.js";
@@ -263,7 +264,7 @@ export const createOrder = async (req, res) => {
         message: `Total: $${order.totalPrice}`,
         relatedId: order._id.toString(),
         user: req.user._id,
-        admin,
+        admin: Admin,
       });
 
       broadcast(
@@ -668,7 +669,7 @@ export const updateOrderToPaid = async (req, res) => {
         message: `Total: $${order.totalPrice}`,
         relatedId: order._id.toString(),
         user: req.user._id,
-        admin,
+        admin: Admin,
       };
 
       await Notification.create(notificationData);
