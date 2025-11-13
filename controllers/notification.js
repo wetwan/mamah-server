@@ -20,7 +20,12 @@ export const getUserNotifications = async (req, res) => {
       .lean()
       .limit(limit);
 
-    res.json({ success: true, notifications });
+    const unreadCount = await Notification.countDocuments({
+      $or: [{ user: req.user._id }, { isGlobal: true }],
+      isRead: false,
+    });
+
+    res.json({ success: true, notifications, unreadCount });
   } catch (err) {
     console.error("Error fetching notifications:", err);
     res.status(500).json({ success: false, message: err.message });
@@ -49,7 +54,12 @@ export const markNotificationAsRead = async (req, res) => {
     notification.isRead = true;
     await notification.save();
 
-    res.json({ success: true, notification });
+    const unreadCount = await Notification.countDocuments({
+      $or: [{ user: req.user._id }, { isGlobal: true }],
+      isRead: false,
+    });
+
+    res.json({ success: true, notification , unreadCount});
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
