@@ -271,6 +271,7 @@ export const createOrder = async (req, res) => {
         message: `Total: $${order.totalPrice}`,
         relatedId: order._id.toString(),
         user: req.user._id,
+        admin 
       });
 
       broadcast(
@@ -471,6 +472,7 @@ export const updateOrderStatus = async (req, res) => {
         oldStatus: oldStatus,
         newStatus: order.status,
         createdAt: new Date().toISOString(),
+        admin
       });
 
       wss.clients.forEach((client) => {
@@ -674,6 +676,7 @@ export const updateOrderToPaid = async (req, res) => {
         message: `Total: $${order.totalPrice}`,
         relatedId: order._id.toString(),
         user: req.user._id,
+        admin
       };
 
       await Notification.create(notificationData);
