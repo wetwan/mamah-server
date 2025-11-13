@@ -23,6 +23,7 @@ const notificationSchema = new mongoose.Schema({
   relatedId: String, // orderId / productId etc
   isRead: { type: Boolean, default: false },
   timestamp: { type: Date, default: Date.now },
+  readBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   isGlobal: { type: Boolean, default: false },
 });
 
