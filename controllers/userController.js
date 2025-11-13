@@ -79,14 +79,13 @@ export const registerUser = async (req, res) => {
 
     await user.save();
 
-    const notificationData = JSON.stringify({
-      type: "NEW_UER_UPDATED",
-      title: `New uSer: ${user.firstName + user.lastName}`,
+    const notificationData = {
+      type: "NEW_USER_CREATED",
+      title: `New User: ${user.firstName} ${user.lastName}`,
       message: "User created successfully",
       relatedId: user._id.toString(),
       user: user._id,
-      admin: Admin.role === "admin",
-    });
+    };
 
     await Notification.create(notificationData);
 
@@ -100,13 +99,13 @@ export const registerUser = async (req, res) => {
       (client) =>
         client.userRole === "admin" ||
         client.userRole === "sales" ||
-        client.userId?.toString() === user_id.toString()
+        client.userId?.toString() === user._id.toString()
     );
 
     res.status(201).json({
       success: true,
       user,
-      token: generateToken(user._id), 
+      token: generateToken(user._id),
       message: "User created successfully",
     });
   } catch (error) {
@@ -139,13 +138,13 @@ export const loginUser = async (req, res) => {
         .json({ success: false, message: "Invalid email or password" });
     }
 
-    const notificationData = JSON.stringify({
+    const notificationData = {
       type: "USER_LOGIN",
-      title: `User login`,
+      title: `User login: ${user.firstName} ${user.lastName}`,
       message: "Logged in successfully",
       relatedId: user._id.toString(),
       user: user._id,
-    });
+    };
 
     await Notification.create(notificationData);
 
@@ -156,7 +155,7 @@ export const loginUser = async (req, res) => {
 
     broadcast(
       message,
-      (client) => client.userId?.toString() === user_id.toString()
+      (client) => client.userId?.toString() === user._id.toString()
     );
 
     res.json({
