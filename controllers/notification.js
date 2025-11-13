@@ -4,7 +4,7 @@ import { Notification } from "../models/notification.js";
 
 export const getUserNotifications = async (req, res) => {
   try {
-    const limit = 50;
+    const limit = 10;
     if (!req.user || !req.user._id) {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
