@@ -9,20 +9,33 @@ export const getUserNotifications = async (req, res) => {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
-  
+    // Get user registration date
+    const userCreatedAt = req.user.createdAt;
+
+    // Fetch notifications after registration
     const notifications = await Notification.find({
-      $or: [
-        { user: req.user._id },
-        { isGlobal: true }, 
+      $and: [
+        { timestamp: { $gte: userCreatedAt } },
+        {
+          $or: [
+            { user: req.user._id }, // personal
+            { isGlobal: true }, // global
+          ],
+        },
       ],
     })
-      .sort({ timestamp: -1 }) 
+      .sort({ timestamp: -1 })
       .lean()
       .limit(limit);
 
     const unreadCount = await Notification.countDocuments({
-      $or: [{ user: req.user._id }, { isGlobal: true }],
-      isRead: false,
+      $and: [
+        { timestamp: { $gte: userCreatedAt } },
+        {
+          $or: [{ user: req.user._id }, { isGlobal: true }],
+        },
+        { isRead: false },
+      ],
     });
 
     res.json({ success: true, notifications, unreadCount });
@@ -52,13 +65,18 @@ export const markNotificationAsRead = async (req, res) => {
 
     if (!notification.readBy.includes(req.user._id)) {
       notification.readBy.push(req.user._id);
-  
+
       await notification.save();
     }
 
     const unreadCount = await Notification.countDocuments({
-      $or: [{ user: req.user._id }, { isGlobal: true }],
-      readBy: { $ne: req.user._id },
+      $and: [
+        { timestamp: { $gte: userCreatedAt } },
+        {
+          $or: [{ user: req.user._id }, { isGlobal: true }],
+        },
+        { isRead: false },
+      ],
     });
 
     res.json({ success: true, notification, unreadCount });
@@ -71,7 +89,7 @@ export const markAllNotificationsAsRead = async (req, res) => {
   try {
     const notifications = await Notification.find({
       $or: [{ user: req.user._id }, { isGlobal: true }],
-      readBy: { $ne: req.user._id }, 
+      readBy: { $ne: req.user._id },
     });
 
     await Promise.all(
@@ -82,8 +100,13 @@ export const markAllNotificationsAsRead = async (req, res) => {
     );
 
     const unreadCount = await Notification.countDocuments({
-      $or: [{ user: req.user._id }, { isGlobal: true }],
-      readBy: { $ne: req.user._id },
+      $and: [
+        { timestamp: { $gte: userCreatedAt } },
+        {
+          $or: [{ user: req.user._id }, { isGlobal: true }],
+        },
+        { isRead: false },
+      ],
     });
 
     res.json({
