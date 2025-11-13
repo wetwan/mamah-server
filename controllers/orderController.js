@@ -264,7 +264,9 @@ export const createOrder = async (req, res) => {
         message: `Total: $${order.totalPrice}`,
         relatedId: order._id.toString(),
         user: req.user._id,
-        admin: Admin,
+        admin: Admin._id,
+        isGlobal: true
+
       });
 
       broadcast(
@@ -669,7 +671,9 @@ export const updateOrderToPaid = async (req, res) => {
         message: `Total: $${order.totalPrice}`,
         relatedId: order._id.toString(),
         user: req.user._id,
-        admin: Admin,
+        admin: Admin._id,
+        isGlobal: boolean;
+
       };
 
       await Notification.create(notificationData);
