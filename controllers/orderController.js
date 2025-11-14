@@ -33,10 +33,7 @@ export const cleanupPendingOrder = (orderId) => {
         order.status === "pending" &&
         order.paymentMethod === "card"
       ) {
-        console.log(
-          `🕒 [Timer Cleanup] Deleting order ${orderId} (Payment Timeout)...`
-        );
-
+    
         for (const item of order.items) {
           const product = await Product.findById(item.product);
           if (product) {
@@ -46,9 +43,7 @@ export const cleanupPendingOrder = (orderId) => {
         }
 
         await Order.deleteOne({ _id: orderId });
-        console.log(
-          `✅ [Timer Cleanup] Order ${orderId} deleted and stock reverted.`
-        );
+    
 
         const notification = await Notification.create({
           type: "ORDER_CANCELLED",
@@ -68,9 +63,7 @@ export const cleanupPendingOrder = (orderId) => {
           createdAt: new Date().toISOString(),
         });
       } else if (order) {
-        console.log(
-          `[Timer Cleanup] Order ${orderId} status changed or payment received. Cleanup skipped.`
-        );
+    
       }
     } catch (error) {
       console.error(
@@ -83,9 +76,7 @@ export const cleanupPendingOrder = (orderId) => {
   }, CLEANUP_DELAY_MS);
 
   pendingOrderTimers.set(orderId.toString(), timer);
-  console.log(
-    `⏱️ Scheduled immediate cleanup for order ${orderId} in 15 minutes.`
-  );
+
 };
 
 export const cancelPendingOrderCleanup = (orderId) => {
@@ -93,7 +84,7 @@ export const cancelPendingOrderCleanup = (orderId) => {
   if (pendingOrderTimers.has(id)) {
     clearTimeout(pendingOrderTimers.get(id));
     pendingOrderTimers.delete(id);
-    console.log(`⏹️ Cancelled cleanup timer for order ${orderIdStr}`);
+
   }
 };
 
@@ -111,13 +102,11 @@ export const performScheduledOrderCleanup = async () => {
     });
 
     if (expiredOrders.length === 0) {
-      console.log("✅ [Scheduled Cleanup] No expired pending orders found.");
+  
       return;
     }
 
-    console.log(
-      `🚨 [Scheduled Cleanup] Found ${expiredOrders.length} expired orders to clean up.`
-    );
+  
 
     for (const order of expiredOrders) {
       try {
@@ -168,7 +157,6 @@ export const performScheduledOrderCleanup = async () => {
       }
     }
 
-    console.log("✅ [Scheduled Cleanup] Bulk cleanup process finished.");
   } catch (error) {
     console.error(
       "❌ Error during scheduled bulk order cleanup:",
