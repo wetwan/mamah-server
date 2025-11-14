@@ -66,16 +66,14 @@ export const markNotificationAsRead = async (req, res) => {
         .json({ success: false, message: "Not authorized" });
     }
 
-    // Mark as read by this user if not already
     if (!notification.readBy.includes(req.user._id)) {
       notification.readBy.push(req.user._id);
       await notification.save();
     }
 
-    // Count unread since the user joined
     const unreadCount = await Notification.countDocuments({
       $and: [
-        { timestamp: { $gte: userCreatedAt } },
+        { timestamp: { $gte: user.createdAt } },
         {
           $or: [{ user: req.user._id }, { isGlobal: true }],
         },
@@ -89,6 +87,7 @@ export const markNotificationAsRead = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
+
 
 export const markAllNotificationsAsRead = async (req, res) => {
   try {
