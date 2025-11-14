@@ -4,6 +4,7 @@ import Order from "../models/order.js";
 import Product from "../models/product.js";
 
 import { wss } from "../server.js";
+import { sendMessageToUser } from "../utils/websocketHelpers.js";
 
 const WS_OPEN = 1;
 
@@ -49,33 +50,22 @@ export const cleanupPendingOrder = (orderId) => {
           `✅ [Timer Cleanup] Order ${orderId} deleted and stock reverted.`
         );
 
-        await Notification.create({
+        const notification = await Notification.create({
           type: "ORDER_CANCELLED",
           title: "❌ Order Cancelled: Payment Failed",
-          message: `Your pending card payment order #${orderId.slice(
+          message: `Pending card payment order #${orderId.slice(
             -4
-          )} timed out after 15 minutes and was cancelled. Please re-order if necessary.`,
-          relatedId: order._id.toString(),
+          )} cancelled after 15 minutes.`,
+          relatedId: orderId,
           user: order.user,
         });
 
-        const cancellationMessage = JSON.stringify({
+        // Notify the user
+        sendMessageToUser(order.user.toString(), {
           type: "ORDER_CANCELLED",
-          orderId: orderId,
-          message: "Payment failed/timed out (15 mins)",
+          orderId,
+          message: notification.message,
           createdAt: new Date().toISOString(),
-        });
-
-        // or use the wss.clients loop provided.
-        wss.clients.forEach((client) => {
-          if (
-            client.readyState === WS_OPEN &&
-            (client.userRole === "admin" ||
-              client.userRole === "sales" ||
-              client.userId?.toString() === order.user.toString())
-          ) {
-            client.send(cancellationMessage);
-          }
         });
       } else if (order) {
         console.log(
@@ -99,10 +89,10 @@ export const cleanupPendingOrder = (orderId) => {
 };
 
 export const cancelPendingOrderCleanup = (orderId) => {
-  const orderIdStr = orderId.toString();
-  if (pendingOrderTimers.has(orderIdStr)) {
-    clearTimeout(pendingOrderTimers.get(orderIdStr));
-    pendingOrderTimers.delete(orderIdStr);
+  const id = orderId.toString();
+  if (pendingOrderTimers.has(id)) {
+    clearTimeout(pendingOrderTimers.get(id));
+    pendingOrderTimers.delete(id);
     console.log(`⏹️ Cancelled cleanup timer for order ${orderIdStr}`);
   }
 };
@@ -276,8 +266,7 @@ export const createOrder = async (req, res) => {
         );
       }
 
-      // New order notification
-      await Notification.create({
+      const notification = await Notification.create({
         type: "NEW_ORDER",
         title: `New Order #${order._id.toString().slice(-4)}`,
         message: `Total: $${order.totalPrice}`,
@@ -286,38 +275,50 @@ export const createOrder = async (req, res) => {
         admin: Admin._id,
       });
 
-      broadcast(
-        {
+      // Notify order creator
+      sendMessageToUser(req.user._id.toString(), {
+        type: "NEW_ORDER",
+        orderId: order._id.toString(),
+        message: notification.message,
+        createdAt: new Date().toISOString(),
+      });
+
+      // Send message to the user and all admin/sales users
+      await sendMessageToUser(order.user.toString(), message, [
+        "admin",
+        "sales",
+      ]);
+      // Notify admins
+      const admins = await User.find({ role: { $in: ["admin", "sales"] } });
+      for (const admin of admins) {
+        sendMessageToUser(admin._id.toString(), {
           type: "NEW_ORDER",
-          title: `New Order #${order._id.toString().slice(-4)}`,
-          message: `Total: $${order.totalPrice}`,
-          relatedId: order._id.toString(),
+          orderId: order._id.toString(),
+          message: `New order #${order._id.toString().slice(-4)} by ${
+            req.user.name
+          }`,
           createdAt: new Date().toISOString(),
-        },
-        (client) =>
-          client.userRole === "admin" ||
-          client.userRole === "sales" ||
-          client.userId?.toString() === req.user._id.toString()
-      );
+        });
+      }
 
       // Send inventory alert if needed
       if (lowStockAlerts.length > 0) {
-        const alertData = {
+        const alertNotification = await Notification.create({
           type: "INVENTORY_ALERT",
           title: "Inventory Alert",
           message: `${lowStockAlerts.length} product(s) are low in stock`,
           relatedId: order._id.toString(),
-        };
+        });
 
-        await Notification.create(alertData);
-        broadcast(
-          {
-            ...alertData,
+        for (const admin of admins) {
+          sendMessageToUser(admin._id.toString(), {
+            type: "INVENTORY_ALERT",
             alerts: lowStockAlerts,
+            orderId: order._id.toString(),
+            message: alertNotification.message,
             createdAt: new Date().toISOString(),
-          },
-          (client) => client.userRole === "admin" || client.userRole === "sales"
-        );
+          });
+        }
       }
 
       return res.status(201).json({
@@ -432,7 +433,6 @@ export const getUserOrders = async (req, res) => {
 
 export const updateOrderStatus = async (req, res) => {
   try {
-  
     const { orderId } = req.params;
     const { status } = req.body;
 
@@ -686,7 +686,7 @@ export const updateOrderToPaid = async (req, res) => {
     if (order) {
       const notificationData = {
         type: "NEW_ORDER_PAYMENT",
-        title: `Transaction sucessfull #${order._id.toString().slice(-4)}`,
+        title: `Transaction successful #${order._id.toString().slice(-4)}`,
         message: `Total: $${order.totalPrice}`,
         relatedId: order._id.toString(),
         user: req.user._id,
@@ -700,14 +700,11 @@ export const updateOrderToPaid = async (req, res) => {
         createdAt: new Date().toISOString(),
       };
 
-      // Send to admins, sales, and the user who created the order
-      broadcast(
-        message,
-        (client) =>
-          client.userRole === "admin" ||
-          client.userRole === "sales" ||
-          client.userId?.toString() === order.user.toString()
-      );
+      // Send message to the user and all admin/sales users
+      await sendMessageToUser(order.user.toString(), message, [
+        "admin",
+        "sales",
+      ]);
     }
     if (lowStockAlerts.length > 0) {
       const notificationData = {

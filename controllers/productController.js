@@ -3,18 +3,12 @@ import { v2 as cloudinary } from "cloudinary";
 
 import { wss } from "../server.js";
 import { Notification } from "../models/notification.js";
+import { sendMessageToUser } from "../utils/websocketHelpers.js";
 
 const WS_OPEN = 1;
 
-const broadcast = (message, filterFn) => {
-  if (!wss.clients) return;
 
-  wss.clients.forEach((client) => {
-    if (client.readyState === WS_OPEN && (!filterFn || filterFn(client))) {
-      client.send(JSON.stringify(message));
-    }
-  });
-};
+const ALL_ROLES = ["admin", "sales", "shopper"];
 
 export const createProduct = async (req, res) => {
   try {
@@ -99,29 +93,16 @@ export const createProduct = async (req, res) => {
       postedby: req.admin._id,
     });
 
-    const notificationData = JSON.stringify({
+    const notificationData = {
       type: "NEW_PRODUCT_CREATED",
       title: `New Product: ${product.name}`,
       message: `A new product was added to category ${product.category}`,
       relatedId: product._id.toString(),
       isGlobal: true,
-    });
-
-    await Notification.create(notificationData);
-
-    const message = {
-      ...notificationData,
-      timestamp: new Date().toISOString(),
     };
 
-    // Send to all open connections (admins, sales)
-    broadcast(
-      message,
-      (client) =>
-        client.userRole === "admin" ||
-        client.userRole === "sales" ||
-        client.userRole === "shopper"
-    );
+    await Notification.create(notificationData);
+    await sendMessageToUser(null, notificationData, ALL_ROLES);
 
     res.status(201).json({
       success: true,
@@ -295,13 +276,8 @@ export const toggleSizeAvailability = async (req, res) => {
 
     await Notification.create(notificationData);
 
-    const message = {
-      ...notificationData,
-      timestamp: new Date().toISOString(),
-    };
-    broadcast(message, (client) =>
-      ["admin", "sales", "shopper"].includes(client.userRole)
-    );
+    await Notification.create(notificationData);
+    await sendMessageToUser(null, notificationData, ALL_ROLES);
 
     res.status(200).json({
       success: true,
@@ -341,14 +317,7 @@ export const toggleColorAvailability = async (req, res) => {
     };
 
     await Notification.create(notificationData);
-
-    const message = {
-      ...notificationData,
-      timestamp: new Date().toISOString(),
-    };
-    broadcast(message, (client) =>
-      ["admin", "sales", "shopper"].includes(client.userRole)
-    );
+    await sendMessageToUser(null, notificationData, ALL_ROLES);
 
     res.status(200).json({
       success: true,
@@ -391,28 +360,18 @@ export const updateProductDiscount = async (req, res) => {
     product.discount = discount;
     await product.save();
 
-    const notificationData = JSON.stringify({
+    const notificationData = {
       type: "NEW_PRODUCT_UPDATED",
-      title: `New Product: ${product.name}`,
+      title: `Product: ${product.name}`,
       message: `A product discount was updated`,
       relatedId: product._id.toString(),
       isGlobal: true,
-    });
-
-    await Notification.create(notificationData);
-
-    const message = {
-      ...notificationData,
-      timestamp: new Date().toISOString(),
     };
 
-    broadcast(
-      message,
-      (client) =>
-        client.userRole === "admin" ||
-        client.userRole === "sales" ||
-        client.userRole === "shopper"
-    );
+    await Notification.create(notificationData);
+    await sendMessageToUser(null, notificationData, ALL_ROLES);
+
+
 
     res.status(200).json({
       success: true,
@@ -456,29 +415,16 @@ export const updateProductPrice = async (req, res) => {
     product.discount = 0;
     await product.save();
 
-    const notificationData = JSON.stringify({
+    const notificationData = {
       type: "NEW_PRODUCT_UPDATED",
-      title: `New Product: ${product.name}`,
+      title: `Product: ${product.name}`,
       message: `A product price was updated`,
       relatedId: product._id.toString(),
       isGlobal: true,
-    });
-
-    await Notification.create(notificationData);
-
-    const message = {
-      ...notificationData,
-      timestamp: new Date().toISOString(),
     };
 
-    broadcast(
-      message,
-      (client) =>
-        client.userRole === "admin" ||
-        client.userRole === "sales" ||
-        client.userRole === "shopper"
-    );
-
+    await Notification.create(notificationData);
+    await sendMessageToUser(null, notificationData, ALL_ROLES);
     res.status(200).json({
       success: true,
       message: "Product price updated successfully",

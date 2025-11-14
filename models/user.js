@@ -11,6 +11,7 @@ const userSchema = new mongoose.Schema(
     stripeCustomerId: { type: String },
     role: { type: String, default: "shopper" },
     createdAt: { type: Date, default: Date.now },
+    refreshToken: { type: String, default: null },
   },
   { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
 );

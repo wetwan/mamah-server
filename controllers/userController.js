@@ -5,6 +5,7 @@ import bcrypt from "bcrypt";
 
 import { wss } from "../server.js";
 import { Notification } from "../models/notification.js";
+import jwt from "jsonwebtoken";
 import Admin from "../models/admin.js";
 
 const WS_OPEN = 1;
@@ -39,14 +40,12 @@ export const registerUser = async (req, res) => {
       });
     }
 
-    // Validate email
     if (!validator.isEmail(email)) {
       return res
         .status(400)
         .json({ success: false, message: "Please enter a valid email" });
     }
 
-    // Validate password strength
     if (password.length < 6) {
       return res.status(400).json({
         success: false,
@@ -54,7 +53,6 @@ export const registerUser = async (req, res) => {
       });
     }
 
-    // Check if user already exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res
@@ -62,11 +60,9 @@ export const registerUser = async (req, res) => {
         .json({ success: false, message: "User already exists" });
     }
 
-    // Hash password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Create user
     const user = new User({
       firstName,
       lastName,
@@ -77,7 +73,22 @@ export const registerUser = async (req, res) => {
       role: "shopper",
     });
 
+    const refreshToken = jwt.sign(
+      { id: user._id },
+      process.env.JWT_REFRESH_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    user.refreshToken = refreshToken;
+
     await user.save();
+
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
 
     const notificationData = {
       type: "NEW_USER_CREATED",
@@ -85,27 +96,34 @@ export const registerUser = async (req, res) => {
       message: "User created successfully",
       relatedId: user._id.toString(),
       user: user._id,
+      admin: Admin._id,
     };
-
     await Notification.create(notificationData);
-
     const message = {
       ...notificationData,
       timestamp: new Date().toISOString(),
     };
-
     broadcast(
       message,
+
       (client) =>
         client.userRole === "admin" ||
-        client.userRole === "sales" ||
         client.userId?.toString() === user._id.toString()
     );
+    const userResponse = {
+      _id: user._id,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      phone: user.phone,
+      address: user.address,
+      role: user.role,
+    };
 
     res.status(201).json({
       success: true,
-      user,
-      token: generateToken(user._id),
+      user: userResponse,
+      accessToken: generateToken(user._id),
       message: "User created successfully",
     });
   } catch (error) {
@@ -138,6 +156,23 @@ export const loginUser = async (req, res) => {
         .json({ success: false, message: "Invalid email or password" });
     }
 
+    const accessToken = generateToken(user._id);
+    const refreshToken = jwt.sign(
+      { id: user._id },
+      process.env.JWT_REFRESH_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    user.refreshToken = refreshToken;
+    await user.save();
+
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
     const notificationData = {
       type: "USER_LOGIN",
       title: `User login: ${user.firstName} ${user.lastName}`,
@@ -145,23 +180,23 @@ export const loginUser = async (req, res) => {
       relatedId: user._id.toString(),
       user: user._id,
     };
-
     await Notification.create(notificationData);
 
-    const message = {
-      ...notificationData,
-      timestamp: new Date().toISOString(),
+    const userResponse = {
+      _id: user._id,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      phone: user.phone,
+      address: user.address,
+      role: user.role,
     };
 
-    broadcast(
-      message,
-      (client) => client.userId?.toString() === user._id.toString()
-    );
-
+  
     res.json({
       success: true,
-      user,
-      token: generateToken(user._id),
+      user: userResponse, 
+      accessToken: accessToken,
       message: "Logged in successfully",
     });
   } catch (error) {

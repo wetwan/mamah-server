@@ -8,69 +8,124 @@ const extractToken = (req) => {
     req.headers.authorization.startsWith("Bearer ")
   ) {
     return req.headers.authorization.split(" ")[1];
-  } else if (req.headers.token) {
-    return req.headers.token; // fallback for custom header
   }
+
+  if (req.headers.token) {
+    return req.headers.token;
+  }
+
   return null;
 };
 
 export const protectUser = async (req, res, next) => {
   const token = extractToken(req);
+
   if (!token) {
-    return res.json({ success: false, message: "Not authorized, Login again" });
+    return res.status(401).json({
+      success: false,
+      message: "Not authorized. Access Token missing.",
+    });
   }
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = await User.findById(decoded.id).select("-password");
+
+    req.user = await User.findById(decoded.id).select(
+      "-password -refreshToken"
+    ); // Exclude refreshToken from being loaded
+
+    if (!req.user) {
+      // 403: Token is valid but the user doesn't exist anymore
+      return res.status(403).json({
+        success: false,
+        message: "Authorization failed: User not found.",
+      });
+    }
+
     next();
   } catch (error) {
-    res.json({ success: false, message: error.message });
+    console.error("❌ Access Token Error in protectUser:", error.message);
+    // 401: Token is invalid (signature mismatch) or expired.
+    // The client needs to try refreshing the token.
+    return res.status(401).json({
+      success: false,
+      message: "Access Token invalid or expired.",
+      // This is a common pattern to signal client to request a new token
+      isExpired: error.name === "TokenExpiredError",
+    });
   }
 };
 
 export const protectAdmin = async (req, res, next) => {
   const token = extractToken(req);
+
   if (!token) {
-    return res.json({ success: false, message: "Not authorized, Login again" });
+    return res.status(401).json({
+      success: false,
+      message: "Not authorized. Access Token missing.",
+    });
   }
+
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.admin = await Admin.findById(decoded.id).select("-password");
+    req.admin = await Admin.findById(decoded.id).select(
+      "-password -refreshToken"
+    );
+
+    if (!req.admin) {
+      return res.status(403).json({
+        success: false,
+        message: "Authorization failed: Admin not found.",
+      });
+    }
+
     next();
   } catch (error) {
-    res.json({ success: false, message: error.message });
+    console.error("❌ Access Token Error in protectAdmin:", error.message);
+    return res.status(401).json({
+      success: false,
+      message: "Access Token invalid or expired.",
+      isExpired: error.name === "TokenExpiredError",
+    });
   }
 };
 
 export const protectAll = async (req, res, next) => {
-  try {
-    const token = req.headers.token;
+  const token = extractToken(req);
 
-    if (!token) {
-      return res
-        .status(401)
-        .json({ success: false, message: "Not authorized, please log in" });
-    }
+  if (!token) {
+    return res.status(401).json({
+      success: false,
+      message: "Not authorized. Access Token missing.",
+    });
+  }
+
+  try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // Try to find user or admin
-    let user = await User.findById(decoded.id).select("-password");
-    let admin = await Admin.findById(decoded.id).select("-password");
+    let user = await User.findById(decoded.id).select(
+      "-password -refreshToken"
+    );
+    let admin = await Admin.findById(decoded.id).select(
+      "-password -refreshToken"
+    );
 
     if (!user && !admin) {
       return res.status(403).json({
         success: false,
-        message: "Access denied: invalid credentials",
+        message: "Access denied: Account not found or deleted.",
       });
     }
+
     req.user = user || admin;
 
     next();
   } catch (error) {
-    console.error("Auth Error:", error.message);
-    res
-      .status(401)
-      .json({ success: false, message: "Token invalid or expired" });
+    console.error("❌ Access Token Error in protectAll:", error.message);
+    return res.status(401).json({
+      success: false,
+      message: "Access Token invalid or expired.",
+      isExpired: error.name === "TokenExpiredError",
+    });
   }
 };
