@@ -275,7 +275,6 @@ export const createOrder = async (req, res) => {
         admin: Admin._id,
       });
 
-      // Notify order creator
       sendMessageToUser(req.user._id.toString(), {
         type: "NEW_ORDER",
         orderId: order._id.toString(),
@@ -283,13 +282,8 @@ export const createOrder = async (req, res) => {
         createdAt: new Date().toISOString(),
       });
 
-      // Send message to the user and all admin/sales users
-      await sendMessageToUser(order.user.toString(), message, [
-        "admin",
-        "sales",
-      ]);
-      // Notify admins
-      const admins = await User.find({ role: { $in: ["admin", "sales"] } });
+      const admins = await Admin.find({ role: { $in: ["admin", "sales"] } });
+
       for (const admin of admins) {
         sendMessageToUser(admin._id.toString(), {
           type: "NEW_ORDER",

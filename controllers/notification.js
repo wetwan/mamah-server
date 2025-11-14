@@ -57,13 +57,16 @@ export const markNotificationAsRead = async (req, res) => {
         .json({ success: false, message: "Notification not found" });
     }
 
-    if (
-      notification.user &&
-      notification.user.toString() !== req.user._id.toString()
-    ) {
-      return res
-        .status(403)
-        .json({ success: false, message: "Not authorized" });
+    if (!notification.isGlobal) {
+      if (
+        notification.user &&
+        notification.user.toString() !== req.user._id.toString()
+      ) {
+        return res.status(403).json({
+          success: false,
+          message: "Not authorized",
+        });
+      }
     }
 
     if (!notification.readBy.includes(req.user._id)) {
@@ -87,7 +90,6 @@ export const markNotificationAsRead = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
-
 
 export const markAllNotificationsAsRead = async (req, res) => {
   try {

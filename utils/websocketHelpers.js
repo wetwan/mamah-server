@@ -1,13 +1,14 @@
 import { onlineClients } from "../server.js";
 
-export const sendMessageToUser = async (userId, message) => {
+export const sendMessageToUser = (userId, message) => {
   const clients = onlineClients.get(userId.toString()) || [];
   let sent = false;
-  clients.forEach((client) => {
+
+  for (const client of clients) {
     if (client.readyState === 1) {
       client.send(JSON.stringify(message));
       sent = true;
     }
-  });
+  }
   return sent;
 };
