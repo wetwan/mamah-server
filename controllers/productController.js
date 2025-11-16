@@ -1,12 +1,73 @@
 import Product from "../models/product.js";
 import { v2 as cloudinary } from "cloudinary";
 
-import { wss } from "../server.js";
+import crypto from "crypto";
+
 import { Notification } from "../models/notification.js";
 import { sendMessageToUser } from "../utils/websocketHelpers.js";
+import { redis } from "../config/redis.js";
 
-const WS_OPEN = 1;
+const CACHE_TTL = 600; // 5 minutes in seconds
+const CACHE_PREFIX = "products:";
 
+const generateCacheKey = (query) => {
+  const { page, limit, cat, color, size, min, max, search, sort } = query;
+
+  // Create a consistent string from query params
+  const keyString = JSON.stringify({
+    page: page || 1,
+    limit: limit || 20,
+    cat: cat || "",
+    color: color || "",
+    size: size || "",
+    min: min || "",
+    max: max || "",
+    search: search || "",
+    sort: sort || "",
+  });
+
+  // Hash it for cleaner keys
+  const hash = crypto.createHash("md5").update(keyString).digest("hex");
+  return `${CACHE_PREFIX}${hash}`;
+};
+
+const getFromCache = async (key) => {
+  try {
+    const cached = await redis.get(key);
+    if (cached) {
+      console.log(`📦 Cache HIT: ${key}`);
+      return JSON.parse(cached);
+    }
+    console.log(`❌ Cache MISS: ${key}`);
+    return null;
+  } catch (err) {
+    console.error("Redis get error:", err.message);
+    return null;
+  }
+};
+
+const setCache = async (key, data, ttl = CACHE_TTL) => {
+  try {
+    await redis.set(key, JSON.stringify(data), {
+      EX: ttl,
+    });
+    console.log(`✅ Cached: ${key} (TTL: ${ttl}s)`);
+  } catch (err) {
+    console.error("Redis set error:", err.message);
+  }
+};
+
+export const invalidateProductCache = async () => {
+  try {
+    const keys = await redis.keys(`${CACHE_PREFIX}*`);
+    if (keys.length > 0) {
+      await redis.del(keys);
+      console.log(`🗑️ Invalidated ${keys.length} product cache entries`);
+    }
+  } catch (err) {
+    console.error("Cache invalidation error:", err.message);
+  }
+};
 
 const ALL_ROLES = ["admin", "sales", "shopper"];
 
@@ -102,7 +163,9 @@ export const createProduct = async (req, res) => {
     };
 
     await Notification.create(notificationData);
-    await sendMessageToUser(null, notificationData, ALL_ROLES);
+    sendMessageToUser(null, notificationData, ALL_ROLES);
+
+    await invalidateProductCache();
 
     res.status(201).json({
       success: true,
@@ -129,9 +192,27 @@ export const getAllProducts = async (req, res) => {
       sort,
     } = req.query;
 
+    const cacheKey = generateCacheKey(req.query);
+
     if (Number(limit) === 0) {
+      const allCacheKey = `${CACHE_PREFIX}all`;
+
+      const cached = await getFromCache(allCacheKey);
+      if (cached) {
+        return res.json(cached);
+      }
+
       const all = await Product.find({});
-      return res.json({ products: all });
+      const response = { products: all };
+
+      await setCache(allCacheKey, response, 600);
+
+      return res.json(response);
+    }
+
+    const cachedData = await getFromCache(cacheKey);
+    if (cachedData) {
+      return res.json(cachedData);
     }
 
     const skip = (page - 1) * limit;
@@ -186,6 +267,10 @@ export const getAllProducts = async (req, res) => {
       pages: Math.ceil(total / limit),
       products,
     });
+
+    await setCache(cacheKey, response);
+
+    res.json(response);
   } catch (error) {
     console.error("Error fetching prodcuts:", error.message);
     res.status(500).json({ success: false, message: error.message });
@@ -277,7 +362,8 @@ export const toggleSizeAvailability = async (req, res) => {
     await Notification.create(notificationData);
 
     await Notification.create(notificationData);
-    await sendMessageToUser(null, notificationData, ALL_ROLES);
+    sendMessageToUser(null, notificationData, ALL_ROLES);
+    await invalidateProductCache();
 
     res.status(200).json({
       success: true,
@@ -317,7 +403,9 @@ export const toggleColorAvailability = async (req, res) => {
     };
 
     await Notification.create(notificationData);
-    await sendMessageToUser(null, notificationData, ALL_ROLES);
+    sendMessageToUser(null, notificationData, ALL_ROLES);
+
+    await invalidateProductCache();
 
     res.status(200).json({
       success: true,
@@ -369,9 +457,8 @@ export const updateProductDiscount = async (req, res) => {
     };
 
     await Notification.create(notificationData);
-    await sendMessageToUser(null, notificationData, ALL_ROLES);
-
-
+    sendMessageToUser(null, notificationData, ALL_ROLES);
+    await invalidateProductCache();
 
     res.status(200).json({
       success: true,
@@ -424,7 +511,9 @@ export const updateProductPrice = async (req, res) => {
     };
 
     await Notification.create(notificationData);
-    await sendMessageToUser(null, notificationData, ALL_ROLES);
+    sendMessageToUser(null, notificationData, ALL_ROLES);
+
+    await invalidateProductCache();
     res.status(200).json({
       success: true,
       message: "Product price updated successfully",
@@ -574,3 +663,37 @@ export const deleteReview = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+export const deleteProduct = async (req, res) => {
+  try {
+    const product = await Product.findByIdAndDelete(req.params.id);
+
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: "Product not found",
+      });
+    }
+
+    // Invalidate all product caches
+    await invalidateProductCache();
+
+    res.json({
+      success: true,
+      message: "Product deleted successfully",
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+process.on("SIGINT", async () => {
+  console.log("\n🛑 Shutting down gracefully...");
+  try {
+    await redis.quit();
+    console.log("Redis connection closed");
+  } catch (err) {
+    console.error("Error closing Redis:", err);
+  }
+  process.exit(0);
+});

@@ -7,6 +7,7 @@ const userSchema = new mongoose.Schema(
     email: { type: String, required: true, unique: true },
     phone: { type: String },
     address: { type: String },
+    address2: { type: String },
     password: { type: String, required: true },
     stripeCustomerId: { type: String },
     role: { type: String, default: "shopper" },
