@@ -293,7 +293,6 @@
 //   }
 // })();
 
-
 // server.js
 import "./config/instrumental.js";
 import connectCloudinary from "./config/cloudinary.js";
@@ -321,6 +320,7 @@ import { markUserOffline, markUserOnline } from "./utils/presence.js";
 import { redis } from "./config/redis.js";
 import presenceRoutes from "./routes/presenceRoutes.js";
 import pushNotificatonRouter from "./routes/pushNotification.js";
+import currencyRouter from "./routes/currencyRoute.js";
 // (We would also need to update this import if pushNotification.js is renamed)
 
 dotenv.config();
@@ -386,9 +386,9 @@ wss.on("connection", async (ws, req) => {
 
     console.log(`🟢 ${user.name} is now ONLINE`);
     console.log(
-      `👤 User authenticated: ${user.name} (${user.role}) - ID: ${user._id} (Total connections: ${
-        onlineClients.get(userIdStr).length
-      })`
+      `👤 User authenticated: ${user.name} (${user.role}) - ID: ${
+        user._id
+      } (Total connections: ${onlineClients.get(userIdStr).length})`
     );
   } else {
     // Default to guest if authentication fails
@@ -558,6 +558,7 @@ wss.on("close", () => {
     app.use("/api/notify", noficationRouter);
     app.use("/api/presence", presenceRoutes);
     app.use("/api/push", pushNotificatonRouter);
+    app.use("/api/get-price", currencyRouter);
 
     Sentry.setupExpressErrorHandler(app);
 
