@@ -7,8 +7,19 @@ import { Notification } from "../models/notification.js";
 import { sendMessageToUser } from "../utils/websocketHelpers.js";
 import { redis } from "../config/redis.js";
 
-const CACHE_TTL = 600; // 5 minutes in seconds
+const CACHE_TTL = 300;
 const CACHE_PREFIX = "products:";
+
+let redisConnected = false;
+(async () => {
+  try {
+    await redis.connect();
+    redisConnected = true;
+  } catch (err) {
+    console.error("❌ Failed to connect to Redis:", err);
+    redisConnected = false;
+  }
+})();
 
 const generateCacheKey = (query) => {
   const { page, limit, cat, color, size, min, max, search, sort } = query;
@@ -32,13 +43,13 @@ const generateCacheKey = (query) => {
 };
 
 const getFromCache = async (key) => {
+  if (!redisConnected) return null;
   try {
     const cached = await redis.get(key);
     if (cached) {
-      console.log(`📦 Cache HIT: ${key}`);
       return JSON.parse(cached);
     }
-    console.log(`❌ Cache MISS: ${key}`);
+
     return null;
   } catch (err) {
     console.error("Redis get error:", err.message);
@@ -47,6 +58,7 @@ const getFromCache = async (key) => {
 };
 
 const setCache = async (key, data, ttl = CACHE_TTL) => {
+  if (!redisConnected) return;
   try {
     await redis.set(key, JSON.stringify(data), {
       EX: ttl,
@@ -58,11 +70,11 @@ const setCache = async (key, data, ttl = CACHE_TTL) => {
 };
 
 export const invalidateProductCache = async () => {
+  if (!redisConnected) return;
   try {
     const keys = await redis.keys(`${CACHE_PREFIX}*`);
     if (keys.length > 0) {
       await redis.del(keys);
-      console.log(`🗑️ Invalidated ${keys.length} product cache entries`);
     }
   } catch (err) {
     console.error("Cache invalidation error:", err.message);
@@ -179,6 +191,11 @@ export const createProduct = async (req, res) => {
 };
 
 export const getAllProducts = async (req, res) => {
+  if (typeof Product === "undefined") {
+    throw new Error(
+      'Product model not imported! Add: import Product from "../models/Product.js"'
+    );
+  }
   try {
     const {
       page = 1,
@@ -199,11 +216,12 @@ export const getAllProducts = async (req, res) => {
 
       const cached = await getFromCache(allCacheKey);
       if (cached) {
+        cached.fromCache = true;
         return res.json(cached);
       }
 
       const all = await Product.find({});
-      const response = { products: all };
+      const response = { success: true, products: all, fromCache: false };
 
       await setCache(allCacheKey, response, 600);
 
@@ -220,9 +238,7 @@ export const getAllProducts = async (req, res) => {
     const query = {};
 
     if (cat) query.category = cat;
-
     if (color) query.colors = { $in: [color] };
-
     if (size) query.sizes = { $in: [size] };
 
     if (min || max) {
@@ -251,29 +267,34 @@ export const getAllProducts = async (req, res) => {
       ];
     }
 
-    const products = await Product.find(query)
-      .sort(sortOption)
-      .skip(skip)
-      .limit(Number(limit))
-      .sort({ timestamp: -1 });
+    const [products, total] = await Promise.all([
+      Product.find(query).sort(sortOption).skip(skip).limit(Number(limit)),
+      Product.countDocuments(query),
+    ]);
 
-    const total = await Product.countDocuments(query);
-
-    res.json({
+    const responseData = {
       success: true,
       count: products.length,
       total,
       page: Number(page),
       pages: Math.ceil(total / limit),
       products,
-    });
+      fromCache: false,
+    };
 
-    await setCache(cacheKey, response);
-
-    res.json(response);
+    await setCache(cacheKey, responseData);
+    return res.json(responseData);
   } catch (error) {
     console.error("Error fetching prodcuts:", error.message);
     res.status(500).json({ success: false, message: error.message });
+
+    if (!res.headersSent) {
+      return res.status(500).json({
+        success: false,
+        message: error.message,
+        error: process.env.NODE_ENV === "development" ? error.stack : undefined,
+      });
+    }
   }
 };
 
