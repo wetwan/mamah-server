@@ -232,12 +232,11 @@ export const getAllProducts = async (req, res) => {
       sort,
     } = req.query;
 
-    const cacheKey = generateCacheKey(req.query);
-
     const currencyInfo = await getClientIP(req);
     console.log(
       `💱 Products currency: ${currencyInfo.currency} (${currencyInfo.symbol})`
     );
+    const cacheKey = generateCacheKey(req.query);
 
     if (Number(limit) === 0) {
       const allCacheKey = `${CACHE_PREFIX}all`;
@@ -248,10 +247,12 @@ export const getAllProducts = async (req, res) => {
         return res.json(cached);
       }
 
+      const all = await Product.find({});
+
       const productsWithCurrency = all.map((product) =>
         addCurrencyToProduct(product, currencyInfo)
       );
-      const all = await Product.find({});
+
       const response = {
         success: true,
         products: productsWithCurrency,
@@ -283,24 +284,33 @@ export const getAllProducts = async (req, res) => {
       if (max) query.price.$lte = Number(max);
     }
 
-    const sortOption =
-      sort === "a-z"
-        ? { name: 1 }
-        : sort === "z-a"
-        ? { name: -1 }
-        : sort === "low-high"
-        ? { price: 1 }
-        : sort === "high-low"
-        ? { price: -1 }
-        : { createdAt: -1 };
+    let sortOption = {};
+    if (search && !sort) {
+      // Default to search relevance if searching and no other sort is specified
+      sortOption = { score: { $meta: "textScore" } };
+    } else if (sort === "a-z") {
+      sortOption = { name: 1 };
+    } else if (sort === "z-a") {
+      sortOption = { name: -1 };
+    } else if (sort === "low-high") {
+      sortOption = { price: 1 };
+    } else if (sort === "high-low") {
+      sortOption = { price: -1 };
+    } else {
+      sortOption = { createdAt: -1 }; // Default sort
+    }
+
+    // if (search) {
+    //   const s = search.toLowerCase().trim();
+    //   query.$or = [
+    //     { name: { $regex: s, $options: "i" } },
+    //     { description: { $regex: s, $options: "i" } },
+    //     { category: { $regex: s, $options: "i" } },
+    //   ];
+    // }
 
     if (search) {
-      const s = search.toLowerCase().trim();
-      query.$or = [
-        { name: { $regex: s, $options: "i" } },
-        { description: { $regex: s, $options: "i" } },
-        { category: { $regex: s, $options: "i" } },
-      ];
+      query.$text = { $search: search.trim() };
     }
 
     const [products, total] = await Promise.all([
@@ -308,9 +318,11 @@ export const getAllProducts = async (req, res) => {
       Product.countDocuments(query),
     ]);
 
-    const productsWithCurrency = products.map((product) =>
-      addCurrencyToProduct(product, currencyInfo)
+    const productsWithCurrency = Product.convertToCurrency(
+      products,
+      currencyInfo
     );
+
     const responseData = {
       success: true,
       count: productsWithCurrency.length,
