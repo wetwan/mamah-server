@@ -436,14 +436,20 @@ export const getUserOrders = async (req, res) => {
       .skip(skip)
       .limit(limit);
 
+    const formatted = orders.map((order) => ({
+      ...order.toObject(),
+      displayPrices: order.getDisplayPrices(),
+      formattedTotal: order.formattedTotal,
+    }));
+
     res.status(200).json({
       success: true,
-      count: orders.length,
+      count: formatted.length,
       total,
-      page: page,
+      page,
       totalPages: Math.ceil(total / limit),
       statusCounts,
-      orders,
+      orders: formatted,
     });
   } catch (error) {
     console.error("❌ Error fetching user orders:", error.message);
@@ -595,19 +601,29 @@ export const getAllOrders = async (req, res) => {
           new Date(endDate).setHours(23, 59, 59, 999)
         );
     }
+    const skip = (page - 1) * limit;
 
     // --- 2. If status filter OR date filter is applied → return ALL (no pagination) ---
-    if ((statusFilter && statusFilter !== "all") || startDate || endDate) {
-      const orders = await Order.find(filter).sort({ createdAt: -1 });
-      const totalFiltered = orders.length;
+    if (
+      (statusFilter && statusFilter !== "all") ||
+      startDate ||
+      endDate ||
+      search ||
+      currency
+    ) {
+      const orders = await Order.find(filter).sort(
+        { createdAt: -1 }
+          .populate("user", "name email")
+          .populate("items.product", "name images")
+      );
       const statusCounts = await getStatusCounts(filter);
 
       return res.status(200).json({
         success: true,
         count: orders.length,
-        total: totalFiltered,
+        total: orders.length,
         currentPage: null,
-        totalPages: null, // no pagination
+        totalPages: null,
         statusCounts,
         orders,
       });
@@ -616,53 +632,43 @@ export const getAllOrders = async (req, res) => {
     // --- 3. Otherwise → Paginated Response ---
     const totalFiltered = await Order.countDocuments(filter);
     const totalPages = Math.ceil(totalFiltered / limit);
-    const skip = (page - 1) * limit;
 
-    const [orders, total] = await Promise.all([
-      Order.find(query)
-        .populate("user", "name email")
-        .populate("items.product", "name images")
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(Number(limit)),
-      Order.countDocuments(query),
-    ]);
+    const orders = await Order.find(filter)
+      .populate("user", "name email")
+      .populate("items.product", "name images")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
 
-    const formattedOrders = orders.map((order) => ({
-      ...order.toObject(),
-      displayPrices: order.getDisplayPrices(),
-      formattedTotal: order.formattedTotal,
-    }));
+    const statusCounts = await getStatusCounts(filter);
 
-    // Calculate revenue by currency
     const revenueByCurrency = await Order.aggregate([
-      { $match: query },
+      { $match: filter },
       {
         $group: {
           _id: "$currency.code",
           totalOrders: { $sum: 1 },
-          totalRevenue: { $sum: "$totalPrice" }, // Always in NGN
+          totalRevenue: { $sum: "$totalPrice" },
           avgOrderValue: { $avg: "$totalPrice" },
         },
       },
     ]);
-
-    const statusCounts = await getStatusCounts(filter);
+    const formattedOrders = orders.map((order) => ({
+      ...order.toObject(),
+      formattedTotal: order.formattedTotal,
+    }));
 
     return res.status(200).json({
       success: true,
       count: orders.length,
-      total,
+      total: totalFiltered,
       currentPage: page,
       totalPages,
       statusCounts,
       orders: formattedOrders,
       analytics: {
         revenueByCurrency,
-        totalRevenue: revenueByCurrency.reduce(
-          (sum, r) => sum + r.totalRevenue,
-          0
-        ),
+        totalRevenue: revenueByCurrency.reduce((s, r) => s + r.totalRevenue, 0),
       },
     });
   } catch (error) {
