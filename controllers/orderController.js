@@ -707,7 +707,16 @@ export const getSingleOrder = async (req, res) => {
         .json({ success: false, message: "Order not found" });
     }
 
-    res.status(200).json({ success: true, order });
+    const formatted = {
+      ...order.toObject(),
+      displayPrices: order.getDisplayPrices(),
+      formattedTotal: order.formattedTotal,
+    };
+
+    res.status(200).json({
+      success: true,
+      order: formatted,
+    });
   } catch (error) {
     console.error("❌ Error getting order:", error.message);
     res.status(500).json({
