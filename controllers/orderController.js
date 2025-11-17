@@ -6,6 +6,14 @@ import Product from "../models/product.js";
 import { wss } from "../server.js";
 import { sendMessageToUser } from "../utils/websocketHelpers.js";
 
+import currencySymbol from "currency-symbol-map";
+import {
+  getClientIP,
+  getCountry,
+  getCurrencyCode,
+  getRates,
+} from "./currency.js";
+
 const WS_OPEN = 1;
 
 const pendingOrderTimers = new Map();
@@ -33,7 +41,6 @@ export const cleanupPendingOrder = (orderId) => {
         order.status === "pending" &&
         order.paymentMethod === "card"
       ) {
-    
         for (const item of order.items) {
           const product = await Product.findById(item.product);
           if (product) {
@@ -43,7 +50,6 @@ export const cleanupPendingOrder = (orderId) => {
         }
 
         await Order.deleteOne({ _id: orderId });
-    
 
         const notification = await Notification.create({
           type: "ORDER_CANCELLED",
@@ -63,7 +69,6 @@ export const cleanupPendingOrder = (orderId) => {
           createdAt: new Date().toISOString(),
         });
       } else if (order) {
-    
       }
     } catch (error) {
       console.error(
@@ -76,7 +81,6 @@ export const cleanupPendingOrder = (orderId) => {
   }, CLEANUP_DELAY_MS);
 
   pendingOrderTimers.set(orderId.toString(), timer);
-
 };
 
 export const cancelPendingOrderCleanup = (orderId) => {
@@ -84,7 +88,6 @@ export const cancelPendingOrderCleanup = (orderId) => {
   if (pendingOrderTimers.has(id)) {
     clearTimeout(pendingOrderTimers.get(id));
     pendingOrderTimers.delete(id);
-
   }
 };
 
@@ -102,11 +105,8 @@ export const performScheduledOrderCleanup = async () => {
     });
 
     if (expiredOrders.length === 0) {
-  
       return;
     }
-
-  
 
     for (const order of expiredOrders) {
       try {
@@ -156,7 +156,6 @@ export const performScheduledOrderCleanup = async () => {
         );
       }
     }
-
   } catch (error) {
     console.error(
       "❌ Error during scheduled bulk order cleanup:",
@@ -179,6 +178,13 @@ export const createOrder = async (req, res) => {
         message: "No order items provided",
       });
     }
+
+    const ip = getClientIP(req);
+    const countryCode = await getCountry(ip);
+    const currencyCode = getCurrencyCode(countryCode);
+    const rates = await getRates();
+    const exchangeRate = rates[currencyCode] || 1;
+    const symbol = currencySymbol(currencyCode) || currencyCode;
 
     const populatedItems = await Promise.all(
       items.map(async (item) => {
@@ -220,6 +226,17 @@ export const createOrder = async (req, res) => {
       totalPrice,
       status,
       createdBy: req.user._id,
+      currency: {
+        code: currencyCode,
+        symbol: symbol,
+        exchangeRate: exchangeRate,
+        country: countryCode,
+        // Store prices in both NGN and user's currency
+        convertedItemsPrice: itemsPrice * exchangeRate,
+        convertedShippingPrice: (shippingPrice || 0) * exchangeRate,
+        convertedTaxPrice: (taxPrice || 0) * exchangeRate,
+        convertedTotalPrice: totalPrice * exchangeRate,
+      },
     });
 
     try {
@@ -254,10 +271,15 @@ export const createOrder = async (req, res) => {
         );
       }
 
+      const formattedTotal = new Intl.NumberFormat("en-US", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(order.currency.convertedTotalPrice);
+
       const notification = await Notification.create({
         type: "NEW_ORDER",
         title: `New Order #${order._id.toString().slice(-4)}`,
-        message: `Total: $${order.totalPrice}`,
+        message: `Total: ${symbol}${formattedTotal}`,
         relatedId: order._id.toString(),
         user: req.user._id,
         admin: Admin._id,
@@ -267,6 +289,11 @@ export const createOrder = async (req, res) => {
         type: "NEW_ORDER",
         orderId: order._id.toString(),
         message: notification.message,
+        // currency: {
+        //   code: currencyCode,
+        //   symbol: symbol,
+        //   formattedTotal: `${symbol}${formattedTotal}`,
+        // },
         createdAt: new Date().toISOString(),
       });
 
@@ -279,6 +306,12 @@ export const createOrder = async (req, res) => {
           message: `New order #${order._id.toString().slice(-4)} by ${
             req.user.name
           }`,
+          // amount: `${symbol}${formattedTotal}`,
+          // currency: {
+          //   code: currencyCode,
+          //   symbol: symbol,
+          // },
+
           createdAt: new Date().toISOString(),
         });
       }
@@ -307,6 +340,11 @@ export const createOrder = async (req, res) => {
         success: true,
         message: "✅ Order created successfully",
         order,
+        displayCurrency: {
+          code: currencyCode,
+          symbol: symbol,
+          formattedTotal: `${symbol}${formattedTotal}`,
+        },
       });
     } catch (error) {
       console.error("❌ Secondary failure (Stock/WS):", error.message);
@@ -432,11 +470,28 @@ export const updateOrderStatus = async (req, res) => {
       });
     }
 
-    const order = await Order.findById(orderId);
+    const order = await Order.findById(orderId)
+      .populate("user", "name email")
+      .populate("items.product", "name images");
+
     if (!order) {
       return res
         .status(404)
         .json({ success: false, message: "Order not found" });
+    }
+
+    const validStatuses = [
+      "pending",
+      "processing",
+      "shipped",
+      "delivered",
+      "cancelled",
+    ];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid status",
+      });
     }
 
     const oldStatus = order.status;
@@ -450,38 +505,55 @@ export const updateOrderStatus = async (req, res) => {
 
     await order.save(); // Save the updated order
 
-    await Notification.create({
+    const displayPrices = order.getDisplayPrices();
+    const formattedTotal = order.formatPrice(displayPrices.total);
+    const currencySymbol = order.currency?.symbol || "₦";
+    const currencyCode = order.currency?.code || "NGN";
+
+    const statusMessages = {
+      processing: "Your order is being processed",
+      shipped: "Your order has been shipped",
+      delivered: "Your order has been delivered",
+      cancelled: "Your order has been cancelled",
+    };
+
+    const notification = await Notification.create({
       type: "ORDER_STATUS_UPDATE",
-      title: "✔️ Order status is updated",
-      message: `Your order with the ${orderId.slice(-4)} is updated to ${
-        order.status
-      }.`,
+      title: `Order #${order._id.toString().slice(-4)} ${
+        statusMessages[status] || "updated"
+      }`,
+      message: statusMessages[status] || `Order status updated to ${status}`,
       relatedId: order._id.toString(),
-      user: order.user,
+      user: order.user._id,
     });
 
-    if (oldStatus !== status) {
-      const message = JSON.stringify({
-        type: "ORDER_STATUS_UPDATE",
-        orderId: order._id,
-        userId: order.user,
-        oldStatus: oldStatus,
-        newStatus: order.status,
-        createdAt: new Date().toISOString(),
-        admin,
-      });
+    sendMessageToUser(order.user._id.toString(), {
+      type: "ORDER_STATUS_UPDATE",
+      orderId: order._id.toString(),
+      oldStatus,
+      newStatus: status,
+      message: notification.message,
+      currency: {
+        code: currencyCode,
+        symbol: currencySymbol,
+        formattedTotal,
+      },
+      orderDetails: {
+        status: order.status,
+        isDelivered: order.isDelivered,
+        deliveredAt: order.deliveredAt,
+      },
+      createdAt: new Date().toISOString(),
+    });
 
-      wss.clients.forEach((client) => {
-        if (client.readyState === WS_OPEN) {
-          client.send(message);
-        }
-      });
-    }
-
-    res.status(200).json({
+    res.json({
       success: true,
-      message: "✅ Order status updated successfully",
-      order,
+      message: `Order status updated to ${status}`,
+      order: {
+        ...order.toObject(),
+        displayPrices,
+        formattedTotal,
+      },
     });
   } catch (error) {
     console.error("❌ Error updating order status:", error.message);
@@ -497,9 +569,11 @@ export const getAllOrders = async (req, res) => {
     const startDate = req.query.startDate;
     const endDate = req.query.endDate;
     const statusFilter = req.query.status?.toLowerCase();
+    const currency = req.query.currency;
 
     // --- 1. Build Filter ---
     let filter = {};
+    if (currency) query["currency.code"] = currency;
 
     if (query) {
       filter.$or = [
@@ -542,22 +616,54 @@ export const getAllOrders = async (req, res) => {
     // --- 3. Otherwise → Paginated Response ---
     const totalFiltered = await Order.countDocuments(filter);
     const totalPages = Math.ceil(totalFiltered / limit);
+    const skip = (page - 1) * limit;
 
-    const orders = await Order.find(filter)
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(limit);
+    const [orders, total] = await Promise.all([
+      Order.find(query)
+        .populate("user", "name email")
+        .populate("items.product", "name images")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(Number(limit)),
+      Order.countDocuments(query),
+    ]);
+
+    const formattedOrders = orders.map((order) => ({
+      ...order.toObject(),
+      displayPrices: order.getDisplayPrices(),
+      formattedTotal: order.formattedTotal,
+    }));
+
+    // Calculate revenue by currency
+    const revenueByCurrency = await Order.aggregate([
+      { $match: query },
+      {
+        $group: {
+          _id: "$currency.code",
+          totalOrders: { $sum: 1 },
+          totalRevenue: { $sum: "$totalPrice" }, // Always in NGN
+          avgOrderValue: { $avg: "$totalPrice" },
+        },
+      },
+    ]);
 
     const statusCounts = await getStatusCounts(filter);
 
     return res.status(200).json({
       success: true,
       count: orders.length,
-      total: totalFiltered,
+      total,
       currentPage: page,
       totalPages,
       statusCounts,
-      orders,
+      orders: formattedOrders,
+      analytics: {
+        revenueByCurrency,
+        totalRevenue: revenueByCurrency.reduce(
+          (sum, r) => sum + r.totalRevenue,
+          0
+        ),
+      },
     });
   } catch (error) {
     console.error("❌ Error fetching orders:", error.message);
@@ -665,11 +771,16 @@ export const updateOrderToPaid = async (req, res) => {
     };
     await order.save();
 
+    const displayPrices = order.getDisplayPrices();
+    const formattedTotal = order.formatPrice(displayPrices.total);
+    const currencySymbol = order.currency?.symbol || "₦";
+    const currencyCode = order.currency?.code || "NGN";
+
     if (order) {
       const notificationData = {
         type: "NEW_ORDER_PAYMENT",
         title: `Transaction successful #${order._id.toString().slice(-4)}`,
-        message: `Total: $${order.totalPrice}`,
+        message: `Total: ${formattedTotal}`,
         relatedId: order._id.toString(),
         user: req.user._id,
         admin: Admin._id,
@@ -677,16 +788,53 @@ export const updateOrderToPaid = async (req, res) => {
 
       await Notification.create(notificationData);
 
-      const message = {
+      const userMessage = {
         ...notificationData,
+        currency: {
+          code: currencyCode,
+          symbol: currencySymbol,
+          formattedTotal,
+          originalTotal: `₦${order.totalPrice.toFixed(2)}`, // Always show NGN
+        },
+        orderDetails: {
+          orderId: order._id.toString(),
+          status: order.status,
+          isPaid: order.isPaid,
+          paidAt: order.paidAt,
+        },
         createdAt: new Date().toISOString(),
       };
 
-      // Send message to the user and all admin/sales users
-      await sendMessageToUser(order.user.toString(), message, [
+      // Send to user
+      await sendMessageToUser(order.user.toString(), userMessage, [
         "admin",
         "sales",
       ]);
+
+      // Send notification to admins with both currencies
+      const admins = await Admin.find({ role: { $in: ["admin", "sales"] } });
+
+      for (const admin of admins) {
+        sendMessageToUser(admin._id.toString(), {
+          type: "NEW_ORDER_PAYMENT",
+          title: `Payment Received #${order._id.toString().slice(-4)}`,
+          message: `Order by ${req.user.name || "Customer"}`,
+          amount: formattedTotal,
+          currency: {
+            code: currencyCode,
+            symbol: currencySymbol,
+            originalAmount: `₦${order.totalPrice.toFixed(2)}`,
+            exchangeRate: order.currency?.exchangeRate || 1,
+          },
+          orderDetails: {
+            orderId: order._id.toString(),
+            customerName: req.user.name,
+            status: order.status,
+            paymentMethod: order.paymentMethod,
+          },
+          createdAt: new Date().toISOString(),
+        });
+      }
     }
     if (lowStockAlerts.length > 0) {
       const notificationData = {
@@ -722,6 +870,135 @@ export const updateOrderToPaid = async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message || "Failed to finalize payment.",
+    });
+  }
+};
+
+export const cancelOrder = async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id).populate("items.product");
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    // Check authorization
+    const isOwner = order.user.toString() === req.user._id.toString();
+    const isAdmin = req.user.role === "admin";
+
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to cancel this order",
+      });
+    }
+
+    // Can't cancel delivered orders
+    if (order.status === "delivered") {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot cancel delivered orders",
+      });
+    }
+
+    // Already cancelled
+    if (order.status === "cancelled") {
+      return res.status(400).json({
+        success: false,
+        message: "Order is already cancelled",
+      });
+    }
+
+    // Restore stock if order was paid and processed
+    if (
+      order.isPaid &&
+      (order.status === "processing" || order.status === "shipped")
+    ) {
+      await Promise.all(
+        order.items.map(async (item) => {
+          const product = await Product.findById(item.product._id);
+          if (product) {
+            product.stock += item.quantity;
+            await product.save();
+            console.log(
+              `✅ Restored ${item.quantity} units to ${product.name}`
+            );
+          }
+        })
+      );
+    }
+
+    // Update order status
+    order.status = "cancelled";
+    await order.save();
+
+    // Get currency info
+    const displayPrices = order.getDisplayPrices();
+    const formattedTotal = order.formatPrice(displayPrices.total);
+    const currencySymbol = order.currency?.symbol || "₦";
+    const currencyCode = order.currency?.code || "NGN";
+
+    // Create notification
+    const notification = await Notification.create({
+      type: "ORDER_CANCELLED",
+      title: `Order #${order._id.toString().slice(-4)} Cancelled`,
+      message: `Your order of ${formattedTotal} has been cancelled`,
+      relatedId: order._id.toString(),
+      user: order.user,
+    });
+
+    // Notify user
+    sendMessageToUser(order.user.toString(), {
+      type: "ORDER_CANCELLED",
+      orderId: order._id.toString(),
+      message: notification.message,
+      currency: {
+        code: currencyCode,
+        symbol: currencySymbol,
+        formattedTotal,
+        refundNote: order.isPaid
+          ? "Refund will be processed within 5-7 business days"
+          : null,
+      },
+      createdAt: new Date().toISOString(),
+    });
+
+    // Notify admins
+    const admins = await Admin.find({ role: { $in: ["admin", "sales"] } });
+    for (const admin of admins) {
+      sendMessageToUser(admin._id.toString(), {
+        type: "ORDER_CANCELLED",
+        orderId: order._id.toString(),
+        message: `Order #${order._id.toString().slice(-4)} was cancelled`,
+        cancelledBy: isAdmin ? "Admin" : "Customer",
+        customerName: req.user.name,
+        amount: formattedTotal,
+        currency: {
+          code: currencyCode,
+          symbol: currencySymbol,
+          originalAmount: `₦${order.totalPrice.toFixed(2)}`,
+        },
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Order cancelled successfully",
+      order: {
+        ...order.toObject(),
+        displayPrices,
+        formattedTotal,
+      },
+    });
+  } catch (error) {
+    console.error("Error cancelling order:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to cancel order",
     });
   }
 };

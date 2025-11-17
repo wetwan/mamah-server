@@ -58,6 +58,44 @@ const orderSchema = new mongoose.Schema(
     shippingPrice: { type: Number, default: 0 },
     taxPrice: { type: Number, default: 0 },
     totalPrice: { type: Number, required: true },
+    currency: {
+      code: {
+        type: String,
+        default: "NGN",
+        required: true,
+      },
+      symbol: {
+        type: String,
+        default: "₦",
+        required: true,
+      },
+      exchangeRate: {
+        type: Number,
+        default: 1,
+        required: true,
+      },
+      country: {
+        type: String,
+        default: "NG",
+      },
+      // Converted prices in user's currency
+      convertedItemsPrice: {
+        type: Number,
+        default: 0,
+      },
+      convertedShippingPrice: {
+        type: Number,
+        default: 0,
+      },
+      convertedTaxPrice: {
+        type: Number,
+        default: 0,
+      },
+      convertedTotalPrice: {
+        type: Number,
+        default: 0,
+      },
+    },
 
     status: {
       type: String,
@@ -112,6 +150,40 @@ orderSchema.pre("save", function (next) {
   }
   next();
 });
+
+orderSchema.virtual("formattedTotal").get(function () {
+  const total = this.currency?.convertedTotalPrice || this.totalPrice;
+  const symbol = this.currency?.symbol || "₦";
+
+  return `${symbol}${total.toFixed(2)}`;
+});
+
+orderSchema.methods.getDisplayPrices = function () {
+  const useConverted = this.currency?.code !== "NGN";
+
+  return {
+    currency: this.currency?.code || "NGN",
+    symbol: this.currency?.symbol || "₦",
+    items: useConverted ? this.currency.convertedItemsPrice : this.itemsPrice,
+    shipping: useConverted
+      ? this.currency.convertedShippingPrice
+      : this.shippingPrice,
+    tax: useConverted ? this.currency.convertedTaxPrice : this.taxPrice,
+    total: useConverted ? this.currency.convertedTotalPrice : this.totalPrice,
+    exchangeRate: this.currency?.exchangeRate || 1,
+    originalTotal: this.totalPrice,
+  };
+};
+
+orderSchema.methods.formatPrice = function (amount) {
+  const symbol = this.currency?.symbol || "₦";
+  const formatted = new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+
+  return `${symbol}${formatted}`;
+};
 
 const Order = mongoose.model("Order", orderSchema);
 

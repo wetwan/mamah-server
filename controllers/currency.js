@@ -26,7 +26,7 @@ let redisConnected = false;
   }
 })();
 
-const fetchRatesWithCache = async () => {
+export const fetchRatesWithCache = async () => {
   if (redisConnected) {
     try {
       const cached = await redis.get(RATE_KEY);
@@ -54,7 +54,7 @@ const fetchRatesWithCache = async () => {
   return data.rates;
 };
 
-const getCurrencyCode = (country) => {
+export const getCurrencyCode = (country) => {
   const map = {
     NG: "NGN",
     US: "USD",
@@ -80,7 +80,7 @@ const getCurrencyCode = (country) => {
   return map[country] || "USD";
 };
 
-const getRates = async () => {
+export const getRates = async () => {
   const now = Date.now();
   const expired = now - lastRateFetch > RATE_TTL;
 
@@ -92,7 +92,7 @@ const getRates = async () => {
   return cachedRates;
 };
 
-const getCountry = async (ip) => {
+export const getCountry = async (ip) => {
   if (geoCache.has(ip)) {
     const entry = geoCache.get(ip);
     if (Date.now() - entry.time < GEO_TTL) return entry.country;
@@ -116,7 +116,7 @@ const getCountry = async (ip) => {
   }
 };
 
-const getClientIP = (req) => {
+export const getClientIP = (req) => {
   return (
     req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
     req.headers["x-real-ip"] ||
@@ -126,6 +126,40 @@ const getClientIP = (req) => {
     "127.0.0.1"
   );
 };
+
+export function convertPrice(priceInNGN, exchangeRate, symbol) {
+  const converted = priceInNGN * exchangeRate;
+  const formatted = new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(converted);
+
+  return {
+    raw: converted,
+    formatted: `${symbol}${formatted}`,
+  };
+}
+
+export function createCurrencyObject(
+  currencyInfo,
+  itemsPrice,
+  shippingPrice,
+  taxPrice,
+  totalPrice
+) {
+  return {
+    code: currencyInfo.currency,
+    symbol: currencyInfo.symbol,
+    exchangeRate: currencyInfo.exchangeRate,
+    country: currencyInfo.country,
+    convertedItemsPrice: itemsPrice * currencyInfo.exchangeRate,
+    convertedShippingPrice: shippingPrice * currencyInfo.exchangeRate,
+    convertedTaxPrice: taxPrice * currencyInfo.exchangeRate,
+    convertedTotalPrice: totalPrice * currencyInfo.exchangeRate,
+  };
+}
+
+
 
 const convertSinglePrice = (price, rate, symbol, currencyCode) => {
   const converted = currency(price).multiply(rate).value;
