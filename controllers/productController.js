@@ -342,6 +342,7 @@ export const getSingleProduct = async (req, res) => {
       "postedby",
       "name email"
     );
+
     if (!product) {
       return res
         .status(404)
