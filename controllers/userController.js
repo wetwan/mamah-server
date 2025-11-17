@@ -21,7 +21,18 @@ const broadcast = (message, filterFn) => {
 };
 
 export const registerUser = async (req, res) => {
-  const { firstName, lastName, email, password, phone, address } = req.body;
+  const {
+    firstName,
+    lastName,
+    email,
+    password,
+    phone,
+    address,
+    address2,
+    state,
+    poster,
+    country,
+  } = req.body;
 
   try {
     const missingFields = [];
@@ -31,6 +42,10 @@ export const registerUser = async (req, res) => {
     if (!phone) missingFields.push("phone");
     if (!email) missingFields.push("email");
     if (!password) missingFields.push("password");
+    if (!address2) missingFields.push("address2");
+    if (!state) missingFields.push("state");
+    if (!poster) missingFields.push("poster");
+    if (!country) missingFields.push("country");
 
     if (missingFields.length > 0) {
       return res.status(400).json({
@@ -71,6 +86,10 @@ export const registerUser = async (req, res) => {
       phone,
       address,
       role: "shopper",
+      address2,
+      state,
+      poster,
+      country,
     });
 
     const refreshToken = jwt.sign(
@@ -118,6 +137,10 @@ export const registerUser = async (req, res) => {
       phone: user.phone,
       address: user.address,
       role: user.role,
+      address2: user.address2,
+      state: user.state,
+      poster: user.poster,
+      country: user.country,
     };
 
     res.status(201).json({
@@ -190,12 +213,15 @@ export const loginUser = async (req, res) => {
       phone: user.phone,
       address: user.address,
       role: user.role,
+      address2: user.address2,
+      state: user.state,
+      poster: user.poster,
+      country: user.country,
     };
 
-  
     res.json({
       success: true,
-      user: userResponse, 
+      user: userResponse,
       accessToken: accessToken,
       message: "Logged in successfully",
     });
