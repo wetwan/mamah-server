@@ -99,12 +99,12 @@ productSchema.virtual("finalPrice").get(function () {
     : this.price;
 });
 
-// ✅ Virtual for stock status
+
 productSchema.virtual("inStock").get(function () {
   return this.stock > 0;
 });
 
-// ✅ Automatically calculate average rating and review count
+
 productSchema.pre("save", function (next) {
   if (this.reviews.length > 0) {
     const avg =
@@ -115,7 +115,7 @@ productSchema.pre("save", function (next) {
   next();
 });
 
-// formatted price
+
 productSchema.methods.formatPrice = function (amount) {
   const symbol = this.currency?.symbol || "₦";
   const formatted = new Intl.NumberFormat("en-US", {
@@ -142,24 +142,20 @@ productSchema.methods.getDisplayPrice = function (
     currency: currencyCode,
     symbol: symbol,
 
-    // Prices in target currency
     price: convertedBase,
     finalPrice: convertedFinal,
     savings: convertedBase - convertedFinal,
 
-    // Original NGN prices (for reference)
+  
     originalPrice: basePrice,
     originalFinalPrice: finalPrice,
 
-    // Formatted strings
     formatted: this.formatPrice(convertedFinal, symbol, currencyCode),
     formattedOriginal: isNGN ? null : `₦${finalPrice.toFixed(2)}`,
     formattedBased: isNGN ? null : `₦${price.toFixed(2)}`,
 
-    // Exchange rate
     exchangeRate: exchangeRate,
 
-    // Discount info
     hasDiscount: this.discount > 0,
     discountPercent: this.discount,
   };
