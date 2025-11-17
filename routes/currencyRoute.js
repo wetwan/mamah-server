@@ -1,8 +1,14 @@
 import express from "express";
-import { getPrice } from "../controllers/currency.js";
+import {
+  getExchangeRate,
+  getPrice,
+  getPrices,
+} from "../controllers/currency.js";
 
 const currencyRouter = express.Router();
 
 currencyRouter.get("/:price", getPrice);
+currencyRouter.post("/get-prices", getPrices);
+currencyRouter.get("/exchange-rate", getExchangeRate);
 
 export default currencyRouter;

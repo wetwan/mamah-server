@@ -15,16 +15,28 @@ const MAX_GEO_CACHE_SIZE = 1000;
 
 const RATE_KEY = "exchange_rates_ngn";
 
-const fetchRatesWithCache = async () => {
+let redisConnected = false;
+(async () => {
   try {
-    // Check Redis cache first
-    const cached = await redis.get(RATE_KEY);
-    if (cached) {
-      console.log("📦 Serving rates from Redis cache");
-      return JSON.parse(cached);
-    }
+    await redis.connect();
+    redisConnected = true;
   } catch (err) {
-    console.warn("Redis read failed, fetching fresh rates:", err.message);
+    console.error("❌ Failed to connect to Redis:", err);
+    redisConnected = false;
+  }
+})();
+
+const fetchRatesWithCache = async () => {
+  if (redisConnected) {
+    try {
+      const cached = await redis.get(RATE_KEY);
+      if (cached) {
+        console.log("📦 Serving rates from Redis cache");
+        return JSON.parse(cached);
+      }
+    } catch (err) {
+      console.warn("Redis read failed, fetching fresh rates:", err.message);
+    }
   }
 
   const { data } = await axios.get(
@@ -73,10 +85,7 @@ const getRates = async () => {
   const expired = now - lastRateFetch > RATE_TTL;
 
   if (!cachedRates || expired) {
-    const { data } = await axios.get(
-      "https://api.exchangerate-api.com/v4/latest/NGN"
-    );
-    cachedRates = data.rates;
+    cachedRates = await fetchRatesWithCache();
     lastRateFetch = now;
   }
 
@@ -107,18 +116,36 @@ const getCountry = async (ip) => {
   }
 };
 
+const getClientIP = (req) => {
+  return (
+    req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
+    req.headers["x-real-ip"] ||
+    req.connection?.remoteAddress ||
+    req.socket?.remoteAddress ||
+    req.ip ||
+    "127.0.0.1"
+  );
+};
+
+const convertSinglePrice = (price, rate, symbol, currencyCode) => {
+  const converted = currency(price).multiply(rate).value;
+  const formatted = currency(converted, {
+    symbol,
+    precision: 2,
+  }).format();
+
+  return {
+    raw: converted,
+    formatted,
+  };
+};
+
 export const getPrice = async (req, res) => {
   try {
     const price = Number(req.params.price || req.query.price);
     if (!price) return res.status(400).json({ error: "Invalid price" });
 
-    const ip =
-      req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
-      req.headers["x-real-ip"] ||
-      req.connection?.remoteAddress ||
-      req.socket?.remoteAddress ||
-      req.ip ||
-      "127.0.0.1";
+    const ip = getClientIP(req);
 
     const countryCode = await getCountry(ip);
     const currencyCode = getCurrencyCode(countryCode);
@@ -126,19 +153,20 @@ export const getPrice = async (req, res) => {
     const rates = await getRates();
     const rate = rates[currencyCode] || 1;
 
-    const converted = currency(price).multiply(rate).value;
     const symbol = currencySymbol(currencyCode) || currencyCode;
-
-    const formatted = currency(converted, {
+    const { raw, formatted } = convertSinglePrice(
+      price,
+      rate,
       symbol,
-      precision: 2,
-    }).format();
+      currencyCode
+    );
 
-    res.json({
+    return res.json({
+      success: true,
       country: countryCode,
       currency: currencyCode,
       symbol,
-      raw: converted,
+      raw,
       formatted,
       originalPrice: price,
       originalCurrency: "NGN",
@@ -150,28 +178,134 @@ export const getPrice = async (req, res) => {
   }
 };
 
-export const cleanup = async () => {
-  geoCache.clear();
-  cachedRates = null;
-  
+export const getPrices = async (req, res) => {
   try {
-    await redis.quit();
-    console.log('Redis connection closed');
+    const { prices } = req.body;
+
+    if (!Array.isArray(prices) || prices.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid input. Expected array of prices.",
+      });
+    }
+
+    if (prices.length > 100) {
+      return res.status(400).json({
+        success: false,
+        error: "Maximum 100 prices per request.",
+      });
+    }
+
+    // Validate all prices
+    const validPrices = prices.every((p) => !isNaN(Number(p)) && Number(p) > 0);
+    if (!validPrices) {
+      return res.status(400).json({
+        success: false,
+        error: "All prices must be positive numbers.",
+      });
+    }
+
+    const ip = getClientIP(req);
+    const countryCode = await getCountry(ip);
+    const currencyCode = getCurrencyCode(countryCode);
+
+    const rates = await getRates();
+    const rate = rates[currencyCode] || 1;
+    const symbol = currencySymbol(currencyCode) || currencyCode;
+
+    // Convert all prices
+    const convertedPrices = prices.map((price) => {
+      const numPrice = Number(price);
+      const { raw, formatted } = convertSinglePrice(
+        numPrice,
+        rate,
+        symbol,
+        currencyCode
+      );
+
+      return {
+        original: numPrice,
+        converted: raw,
+        formatted,
+      };
+    });
+
+    return res.json({
+      success: true,
+      country: countryCode,
+      currency: currencyCode,
+      symbol,
+      exchangeRate: rate,
+      originalCurrency: "NGN",
+      prices: convertedPrices,
+      count: convertedPrices.length,
+    });
   } catch (err) {
-    console.error('Error closing Redis:', err);
+    console.error("Error converting prices:", err.message);
+
+    if (!res.headersSent) {
+      return res.status(500).json({
+        success: false,
+        message: "Batch conversion failed",
+        error: process.env.NODE_ENV === "development" ? err.message : undefined,
+      });
+    }
   }
 };
 
-// Graceful shutdown handlers
-if (process.env.NODE_ENV !== 'test') {
-  process.on('SIGINT', async () => {
-    console.log('\n🛑 Shutting down gracefully...');
+export const getExchangeRate = async (req, res) => {
+  try {
+    const ip = getClientIP(req);
+    const countryCode = await getCountry(ip);
+    const currencyCode = getCurrencyCode(countryCode);
+
+    const rates = await getRates();
+    const rate = rates[currencyCode] || 1;
+    const symbol = currencySymbol(currencyCode) || currencyCode;
+
+    return res.json({
+      success: true,
+      country: countryCode,
+      currency: currencyCode,
+      symbol,
+      rate,
+      baseCurrency: "NGN",
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error("Error fetching exchange rate:", err.message);
+
+    if (!res.headersSent) {
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch exchange rate",
+        error: process.env.NODE_ENV === "development" ? err.message : undefined,
+      });
+    }
+  }
+};
+
+export const cleanup = async () => {
+  geoCache.clear();
+  cachedRates = null;
+
+  try {
+    await redis.quit();
+    console.log("Redis connection closed");
+  } catch (err) {
+    console.error("Error closing Redis:", err);
+  }
+};
+
+if (process.env.NODE_ENV !== "test") {
+  process.on("SIGINT", async () => {
+    console.log("\n🛑 Shutting down gracefully...");
     await cleanup();
     process.exit(0);
   });
 
-  process.on('SIGTERM', async () => {
-    console.log('\n🛑 Shutting down gracefully...');
+  process.on("SIGTERM", async () => {
+    console.log("\n🛑 Shutting down gracefully...");
     await cleanup();
     process.exit(0);
   });
