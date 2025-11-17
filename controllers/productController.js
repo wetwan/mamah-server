@@ -6,7 +6,12 @@ import crypto from "crypto";
 import { Notification } from "../models/notification.js";
 import { sendMessageToUser } from "../utils/websocketHelpers.js";
 import { redis } from "../config/redis.js";
-import { getCountry, getCurrencyCode, getRates } from "./currency.js";
+import {
+  getClientIP,
+  getCountry,
+  getCurrencyCode,
+  getRates,
+} from "./currency.js";
 
 const CACHE_TTL = 300;
 const CACHE_PREFIX = "products:";
@@ -229,6 +234,11 @@ export const getAllProducts = async (req, res) => {
 
     const cacheKey = generateCacheKey(req.query);
 
+    const currencyInfo = await getClientIP(req);
+    console.log(
+      `💱 Products currency: ${currencyInfo.currency} (${currencyInfo.symbol})`
+    );
+
     if (Number(limit) === 0) {
       const allCacheKey = `${CACHE_PREFIX}all`;
 
@@ -238,8 +248,16 @@ export const getAllProducts = async (req, res) => {
         return res.json(cached);
       }
 
+      const productsWithCurrency = all.map((product) =>
+        addCurrencyToProduct(product, currencyInfo)
+      );
       const all = await Product.find({});
-      const response = { success: true, products: all, fromCache: false };
+      const response = {
+        success: true,
+        products: productsWithCurrency,
+        currency: currencyInfo,
+        fromCache: false,
+      };
 
       await setCache(allCacheKey, response, 600);
 
@@ -290,18 +308,17 @@ export const getAllProducts = async (req, res) => {
       Product.countDocuments(query),
     ]);
 
-    const formattedProduct = products.map((product) => ({
-      ...product.toObject(),
-      formatPrice: product.price,
-    }));
-
+    const productsWithCurrency = products.map((product) =>
+      addCurrencyToProduct(product, currencyInfo)
+    );
     const responseData = {
       success: true,
-      count: formattedProduct.length,
+      count: productsWithCurrency.length,
       total,
       page: Number(page),
       pages: Math.ceil(total / limit),
-      product: formattedProduct,
+      products: productsWithCurrency,
+      currency: currencyInfo,
       fromCache: false,
     };
 
@@ -324,18 +341,24 @@ export const getAllProducts = async (req, res) => {
 export const getSingleProduct = async (req, res) => {
   try {
     const { id } = req.params;
-    console.log("🔍 Fetching product with ID:", id);
 
-    const product = await Product.findById(id);
+    const product = await Product.findById(id).populate(
+      "postedby",
+      "name email"
+    );
     if (!product) {
       return res
         .status(404)
         .json({ success: false, message: "Product not found" });
     }
 
+    const currencyInfo = await getClientIP(req);
+    const productWithCurrency = addCurrencyToProduct(product, currencyInfo);
+
     res.json({
       success: true,
-      product,
+      product: productWithCurrency,
+      currency: currencyInfo,
     });
   } catch (error) {
     console.error("Error fetching product:", error.message);

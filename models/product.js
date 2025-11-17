@@ -32,13 +32,6 @@ const sizeSchema = new mongoose.Schema({
   available: { type: Boolean, default: true },
 });
 
-const currencySchema = new mongoose.Schema({
-  code: { type: String, default: "NGN" },
-  symbol: { type: String, default: "₦" },
-  exchangeRate: { type: Number, default: 1 },
-  convertedPrice: { type: Number, default: 0 },
-});
-
 const productSchema = new mongoose.Schema(
   {
     name: {
@@ -75,12 +68,9 @@ const productSchema = new mongoose.Schema(
     },
     description: {
       type: String,
-      required: [true, "Product description is required"],
       trim: true,
       maxlength: [1000, "Description cannot exceed 1000 characters"],
     },
-
-    currency: currencySchema,
 
     postedby: {
       type: mongoose.Schema.Types.ObjectId,
@@ -125,7 +115,6 @@ productSchema.pre("save", function (next) {
   next();
 });
 
-
 // formatted price
 productSchema.methods.formatPrice = function (amount) {
   const symbol = this.currency?.symbol || "₦";
@@ -137,18 +126,73 @@ productSchema.methods.formatPrice = function (amount) {
   return `${symbol}${formatted}`;
 };
 
-// return both prices
-productSchema.methods.getDisplayPrice = function () {
-  const useConverted = this.currency?.code !== "NGN";
+productSchema.methods.getDisplayPrice = function (
+  exchangeRate = 1,
+  symbol = "₦",
+  currencyCode = "NGN"
+) {
+  const isNGN = currencyCode === "NGN";
+  const basePrice = this.price;
+  const finalPrice = this.finalPrice;
+
+  const convertedBase = isNGN ? basePrice : basePrice * exchangeRate;
+  const convertedFinal = isNGN ? finalPrice : finalPrice * exchangeRate;
 
   return {
-    currency: this.currency?.code || "NGN",
-    symbol: this.currency?.symbol || "₦",
-    base: this.finalPrice,
-    converted: useConverted ? this.currency.convertedPrice : this.finalPrice,
-    exchangeRate: this.currency?.exchangeRate || 1,
+    currency: currencyCode,
+    symbol: symbol,
+
+    // Prices in target currency
+    price: convertedBase,
+    finalPrice: convertedFinal,
+    savings: convertedBase - convertedFinal,
+
+    // Original NGN prices (for reference)
+    originalPrice: basePrice,
+    originalFinalPrice: finalPrice,
+
+    // Formatted strings
+    formatted: this.formatPrice(convertedFinal, symbol, currencyCode),
+    formattedOriginal: isNGN ? null : `₦${finalPrice.toFixed(2)}`,
+
+    // Exchange rate
+    exchangeRate: exchangeRate,
+
+    // Discount info
+    hasDiscount: this.discount > 0,
+    discountPercent: this.discount,
   };
 };
+
+productSchema.methods.toCurrency = function (currencyInfo) {
+  const { currency, symbol, exchangeRate } = currencyInfo;
+
+  return {
+    ...this.toObject(),
+    displayPrice: this.getDisplayPrice(exchangeRate, symbol, currency),
+  };
+};
+
+productSchema.statics.convertToCurrency = function (products, currencyInfo) {
+  return products.map((product) => {
+    const productObj = product.toObject ? product.toObject() : product;
+    const displayPrice = product.getDisplayPrice(
+      currencyInfo.exchangeRate,
+      currencyInfo.symbol,
+      currencyInfo.currency
+    );
+
+    return {
+      ...productObj,
+      displayPrice,
+    };
+  });
+};
+
+productSchema.index({ category: 1, price: 1 });
+productSchema.index({ name: "text", description: "text" });
+productSchema.index({ averageRating: -1 });
+productSchema.index({ createdAt: -1 });
 
 const Product = mongoose.model("Product", productSchema);
 export default Product;
