@@ -99,11 +99,9 @@ productSchema.virtual("finalPrice").get(function () {
     : this.price;
 });
 
-
 productSchema.virtual("inStock").get(function () {
   return this.stock > 0;
 });
-
 
 productSchema.pre("save", function (next) {
   if (this.reviews.length > 0) {
@@ -114,7 +112,6 @@ productSchema.pre("save", function (next) {
   }
   next();
 });
-
 
 productSchema.methods.formatPrice = function (amount) {
   const symbol = this.currency?.symbol || "₦";
@@ -146,13 +143,11 @@ productSchema.methods.getDisplayPrice = function (
     finalPrice: convertedFinal,
     savings: convertedBase - convertedFinal,
 
-  
     originalPrice: basePrice,
     originalFinalPrice: finalPrice,
 
     formatted: this.formatPrice(convertedFinal, symbol, currencyCode),
-    formattedOriginal: isNGN ? null : `₦${finalPrice.toFixed(2)}`,
-    formattedBased: isNGN ? null : `₦${basePrice.toFixed(2)}`,
+    formattedBasePrice: this.formatPrice(convertedBase, symbol, currencyCode),
 
     exchangeRate: exchangeRate,
 
