@@ -152,7 +152,7 @@ productSchema.methods.getDisplayPrice = function (
 
     formatted: this.formatPrice(convertedFinal, symbol, currencyCode),
     formattedOriginal: isNGN ? null : `₦${finalPrice.toFixed(2)}`,
-    formattedBased: isNGN ? null : `₦${price.toFixed(2)}`,
+    formattedBased: isNGN ? null : `₦${basePrice.toFixed(2)}`,
 
     exchangeRate: exchangeRate,
 
