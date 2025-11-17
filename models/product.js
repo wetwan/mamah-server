@@ -24,12 +24,19 @@ const reviewSchema = new mongoose.Schema(
 
 const colorSchema = new mongoose.Schema({
   name: { type: String, required: true },
-  hex: { type: String, required: false }, 
+  hex: { type: String, required: false },
   available: { type: Boolean, default: true },
 });
 const sizeSchema = new mongoose.Schema({
   name: { type: String, required: true },
   available: { type: Boolean, default: true },
+});
+
+const currencySchema = new mongoose.Schema({
+  code: { type: String, default: "NGN" },
+  symbol: { type: String, default: "₦" },
+  exchangeRate: { type: Number, default: 1 },
+  convertedPrice: { type: Number, default: 0 },
 });
 
 const productSchema = new mongoose.Schema(
@@ -59,7 +66,7 @@ const productSchema = new mongoose.Schema(
     category: {
       type: String,
       required: [true, "Product category is required"],
-      trim: true, 
+      trim: true,
     },
     stock: {
       type: Number,
@@ -72,6 +79,8 @@ const productSchema = new mongoose.Schema(
       trim: true,
       maxlength: [1000, "Description cannot exceed 1000 characters"],
     },
+
+    currency: currencySchema,
 
     postedby: {
       type: mongoose.Schema.Types.ObjectId,
@@ -115,6 +124,31 @@ productSchema.pre("save", function (next) {
   }
   next();
 });
+
+
+// formatted price
+productSchema.methods.formatPrice = function (amount) {
+  const symbol = this.currency?.symbol || "₦";
+  const formatted = new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+
+  return `${symbol}${formatted}`;
+};
+
+// return both prices
+productSchema.methods.getDisplayPrice = function () {
+  const useConverted = this.currency?.code !== "NGN";
+
+  return {
+    currency: this.currency?.code || "NGN",
+    symbol: this.currency?.symbol || "₦",
+    base: this.finalPrice,
+    converted: useConverted ? this.currency.convertedPrice : this.finalPrice,
+    exchangeRate: this.currency?.exchangeRate || 1,
+  };
+};
 
 const Product = mongoose.model("Product", productSchema);
 export default Product;

@@ -6,6 +6,7 @@ import crypto from "crypto";
 import { Notification } from "../models/notification.js";
 import { sendMessageToUser } from "../utils/websocketHelpers.js";
 import { redis } from "../config/redis.js";
+import { getCountry, getCurrencyCode, getRates } from "./currency.js";
 
 const CACHE_TTL = 300;
 const CACHE_PREFIX = "products:";
@@ -122,6 +123,13 @@ export const createProduct = async (req, res) => {
       });
     }
 
+    const ip = getClientIP(req);
+    const countryCode = await getCountry(ip);
+    const currencyCode = getCurrencyCode(countryCode);
+    const rates = await getRates();
+    const exchangeRate = rates[currencyCode] || 1;
+    const symbol = currencySymbol(currencyCode) || currencyCode;
+
     // ✅ Upload images
     const imageUrls = [];
     for (const file of req.files) {
@@ -164,6 +172,16 @@ export const createProduct = async (req, res) => {
       discount: discount || 0,
       images: imageUrls,
       postedby: req.admin._id,
+
+      currency: {
+        code: currencyCode,
+        symbol: symbol,
+        exchangeRate: exchangeRate,
+        country: countryCode,
+        // Store prices in both NGN and user's currency
+        convertedItemsPrice: price * exchangeRate,
+        convertedTotalPrice: totalPrice * exchangeRate,
+      },
     });
 
     const notificationData = {
@@ -272,13 +290,18 @@ export const getAllProducts = async (req, res) => {
       Product.countDocuments(query),
     ]);
 
+    const formattedProduct = products.map((product) => ({
+      ...product.toObject(),
+      formatPrice: product.price,
+    }));
+
     const responseData = {
       success: true,
-      count: products.length,
+      count: formattedProduct.length,
       total,
       page: Number(page),
       pages: Math.ceil(total / limit),
-      products,
+      product: formattedProduct,
       fromCache: false,
     };
 
@@ -535,16 +558,16 @@ export const updateProductPrice = async (req, res) => {
     sendMessageToUser(null, notificationData, ALL_ROLES);
 
     await invalidateProductCache();
+
+    const formattedProduct = orders.map((order) => ({
+      ...product.toObject(),
+      formatPrice: order.price,
+    }));
+
     res.status(200).json({
       success: true,
       message: "Product price updated successfully",
-      product: {
-        _id: product._id,
-        name: product.name,
-        price: product.price,
-        discount: product.discount,
-        finalPrice: product.finalPrice,
-      },
+      product: formattedProduct,
     });
   } catch (error) {
     console.error("❌ Error updating price:", error.message);
