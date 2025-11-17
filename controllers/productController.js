@@ -106,6 +106,7 @@ export const createProduct = async (req, res) => {
     if (!name) missingFields.push("name");
     if (!description) missingFields.push("description");
     if (!price) missingFields.push("price");
+    if (!category) missingFields.push("category");
 
     if (missingFields.length > 0) {
       return res.status(400).json({
@@ -128,12 +129,6 @@ export const createProduct = async (req, res) => {
       });
     }
 
-    const ip = getClientIP(req);
-    const countryCode = await getCountry(ip);
-    const currencyCode = getCurrencyCode(countryCode);
-    const rates = await getRates();
-    const exchangeRate = rates[currencyCode] || 1;
-    const symbol = currencySymbol(currencyCode) || currencyCode;
 
     // ✅ Upload images
     const imageUrls = [];
@@ -178,15 +173,6 @@ export const createProduct = async (req, res) => {
       images: imageUrls,
       postedby: req.admin._id,
 
-      currency: {
-        code: currencyCode,
-        symbol: symbol,
-        exchangeRate: exchangeRate,
-        country: countryCode,
-        // Store prices in both NGN and user's currency
-        convertedItemsPrice: price * exchangeRate,
-        convertedTotalPrice: totalPrice * exchangeRate,
-      },
     });
 
     const notificationData = {
