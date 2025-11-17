@@ -129,7 +129,6 @@ export const createProduct = async (req, res) => {
       });
     }
 
-
     // ✅ Upload images
     const imageUrls = [];
     for (const file of req.files) {
@@ -172,7 +171,6 @@ export const createProduct = async (req, res) => {
       discount: discount || 0,
       images: imageUrls,
       postedby: req.admin._id,
-
     });
 
     const notificationData = {
@@ -350,13 +348,15 @@ export const getSingleProduct = async (req, res) => {
         .json({ success: false, message: "Product not found" });
     }
 
-    const currencyInfo = await getClientIP(req);
-    const productWithCurrency = addCurrencyToProduct(product, currencyInfo);
+    const ip = getClientIP(req);
+    const countryCode = await getCountry(ip);
+
+    const productWithCurrency = product.toCurrency(countryCode);
 
     res.json({
       success: true,
+      product,
       product: productWithCurrency,
-      currency: currencyInfo,
     });
   } catch (error) {
     console.error("Error fetching product:", error.message);
