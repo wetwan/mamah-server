@@ -692,6 +692,13 @@ const getStatusCounts = async (filter) => {
   }, {});
 };
 
+export const ensureOrderAccess = (order, user) => {
+  const owner = order.user.toString() === user._id.toString();
+  const admin = user.role === "admin";
+  if (!owner && !admin) return false;
+  return true;
+};
+
 export const getSingleOrder = async (req, res) => {
   try {
     const { id } = req.params;
@@ -705,6 +712,15 @@ export const getSingleOrder = async (req, res) => {
       return res
         .status(404)
         .json({ success: false, message: "Order not found" });
+    }
+    const isAdmin = req.user.role === "admin" || req.user.role === "sales";
+    const isOwner = order.user.toString() === req.user._id.toString();
+
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied",
+      });
     }
 
     const formatted = {
@@ -938,9 +954,6 @@ export const cancelOrder = async (req, res) => {
           if (product) {
             product.stock += item.quantity;
             await product.save();
-            console.log(
-              `✅ Restored ${item.quantity} units to ${product.name}`
-            );
           }
         })
       );
