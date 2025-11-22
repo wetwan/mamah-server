@@ -15,26 +15,25 @@ const MAX_GEO_CACHE_SIZE = 1000;
 const RATE_KEY = "exchange_rates_ngn";
 
 export const fetchRatesWithCache = async () => {
-
-    try {
-      const cached = await redis.get(RATE_KEY);
-      if (cached) {
-        console.log("📦 Serving rates from Redis cache");
-        return JSON.parse(cached);
-      }
-    } catch (err) {
-      console.warn("Redis read failed, fetching fresh rates:", err.message);
+  try {
+    const cached = await redis.get(RATE_KEY);
+    if (cached) {
+      console.log("📦 Serving rates from Redis cache");
+      return JSON.parse(cached);
     }
+  } catch (err) {
+    console.warn("Redis read failed, fetching fresh rates:", err.message);
+  }
 
 
   const { data } = await axios.get(
     "https://api.exchangerate-api.com/v4/latest/NGN"
   );
 
+  // ✅ FIX: Use ioredis syntax for SET with expiration
   try {
-    await redis.set(RATE_KEY, JSON.stringify(data.rates), {
-      EX: RATE_TTL_SEC,
-    });
+    await redis.set(RATE_KEY, JSON.stringify(data.rates), "EX", RATE_TTL_SEC);
+    console.log("✅ Rates cached in Redis");
   } catch (err) {
     console.warn("Failed to cache rates in Redis:", err.message);
   }

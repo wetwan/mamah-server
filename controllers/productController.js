@@ -53,11 +53,9 @@ const getFromCache = async (key) => {
 };
 
 const setCache = async (key, data, ttl = CACHE_TTL) => {
-
   try {
-    await redis.set(key, JSON.stringify(data), {
-      EX: ttl,
-    });
+  
+    await redis.set(key, JSON.stringify(data), 'EX', ttl);
     console.log(`✅ Cached: ${key} (TTL: ${ttl}s)`);
   } catch (err) {
     console.error("Redis set error:", err.message);
