@@ -1,4 +1,3 @@
-// server.js
 import "./config/instrumental.js";
 import connectCloudinary from "./config/cloudinary.js";
 import express from "express";
@@ -17,16 +16,14 @@ import orderRouter from "./routes/orderRoute.js";
 import { stripeWebhook } from "./controllers/stripeWebhook.js";
 import stripeRouter from "./routes/stripeRoute.js";
 import { Notification } from "./models/notification.js";
-
 import noficationRouter from "./routes/notification.js";
 import { authenticateWebSocket } from "./middlewares/webSocket.js";
 import { performScheduledOrderCleanup } from "./controllers/orderController.js";
-import { markUserOffline, markUserOnline } from "./utils/presence.js";
+import { markUserOffline, markUserOnline, refreshUserPresence } from "./utils/presence.js";
 import { redis } from "./config/redis.js";
 import presenceRoutes from "./routes/presenceRoutes.js";
 import pushNotificatonRouter from "./routes/pushNotification.js";
 import currencyRouter from "./routes/currencyRoute.js";
-// (We would also need to update this import if pushNotification.js is renamed)
 
 dotenv.config();
 
@@ -45,97 +42,102 @@ cron.schedule(
   },
   {
     scheduled: true,
-    timezone: "Etc/UTC", // Use a consistent timezone like UTC
+    timezone: "Etc/UTC",
   }
 );
 
-// Redis test runs once on startup, not on every connection
+// Redis test
 (async () => {
   const test = await redis.set("test", "hello");
   const value = await redis.get("test");
-  console.log("Redis test value:", value); // should print "hello"
+  console.log("Redis test value:", value);
 })();
 
+// ✅ FIX: Add helper function
+const broadcastToAll = (wss, message) => {
+  const messageStr = JSON.stringify(message);
+  wss.clients.forEach((client) => {
+    if (client.readyState === 1) {
+      client.send(messageStr);
+    }
+  });
+};
+
+// ✅ FIX: Add await and simplify logic
 wss.on("connection", async (ws, req) => {
   ws.isAlive = true;
   connectedClients++;
-  console.log(`✅ New WebSocket client connected (Total: ${connectedClients})`);
 
+  // ✅ CRITICAL FIX: Add await here
+  const user = await authenticateWebSocket(req);
 
-  const user = authenticateWebSocket(req);
-
-  if (user) {
-
-    ws.userId = user._id;
-    ws.userRole = user.role;
-    ws.userName = user.name;
-    ws.isAuthenticated = true;
-
-    const userIdStr = user._id.toString();
-    if (!onlineClients.has(userIdStr)) {
-      onlineClients.set(userIdStr, []); 
-    }
-    onlineClients.get(userIdStr).push(ws);
-
-    await markUserOnline(user._id);
-
-    broadcastToAll(wss, {
-      type: "USER_ONLINE",
-      userId: user._id,
-      name: user.name,
-      timestamp: new Date().toISOString(),
-    });
-
-    console.log(`🟢 ${user.name} is now ONLINE`);
-    console.log(
-      `👤 User authenticated: ${user.name} (${user.role}) - ID: ${
-        user._id
-      } (Total connections: ${onlineClients.get(userIdStr).length})`
-    );
-  } else {
-
-    ws.userRole = "guest";
-    ws.isAuthenticated = false;
-    console.log("👤 Guest connected (unauthenticated)");
+  if (!user) {
+    console.log("⚠️ Unauthenticated WebSocket connection attempt");
+    ws.close(1008, "Authentication required");
+    return;
   }
 
+  // User is authenticated - set up connection
+  ws.userId = user._id.toString();
+  ws.userRole = user.role;
+  ws.userName = user.name;
+  ws.isAuthenticated = true;
+
+  const userIdStr = user._id.toString();
+
+  if (!onlineClients.has(userIdStr)) {
+    onlineClients.set(userIdStr, []);
+  }
+  onlineClients.get(userIdStr).push(ws);
+
+  await markUserOnline(user._id);
+
+  broadcastToAll(wss, {
+    type: "USER_ONLINE",
+    userId: user._id,
+    name: user.name,
+    timestamp: new Date().toISOString(),
+  });
+
+  console.log(`🟢 ${user.name} is now ONLINE`);
+  console.log(
+    `👤 User authenticated: ${user.name} (${user.role}) - ID: ${
+      user._id
+    } (Total connections: ${onlineClients.get(userIdStr).length})`
+  );
 
   ws.send(
     JSON.stringify({
       type: "CONNECTION_SUCCESS",
-      message: user
-        ? `Welcome back, ${user.name}!`
-        : "Connected as guest. Please login for full features.",
-      isAuthenticated: ws.isAuthenticated,
+      message: `Welcome back, ${user.name}!`,
+      isAuthenticated: true,
       role: ws.userRole,
       timestamp: new Date().toISOString(),
     })
   );
 
-  if (ws.isAuthenticated && ws.userId) {
-    try {
-      const notifications = await Notification.find({
-        $or: [{ isGlobal: true }, { userIds: ws.userId }],
-      })
-        .sort({ createdAt: -1 })
-        .limit(50);
+  // Send notification history
+  try {
+    const notifications = await Notification.find({
+      $or: [{ isGlobal: true }, { userIds: ws.userId }],
+    })
+      .sort({ createdAt: -1 })
+      .limit(50);
 
-      if (notifications.length > 0) {
-        ws.send(
-          JSON.stringify({
-            type: "NOTIFICATION_HISTORY",
-            count: notifications.length,
-            notifications: notifications,
-            timestamp: new Date().toISOString(),
-          })
-        );
-        console.log(`📨 Sent ${notifications.length} notifications to user`);
-      }
-    } catch (error) {
-      console.error("❌ Error fetching notifications:", error.message);
+    if (notifications.length > 0) {
+      ws.send(
+        JSON.stringify({
+          type: "NOTIFICATION_HISTORY",
+          count: notifications.length,
+          notifications: notifications,
+          timestamp: new Date().toISOString(),
+        })
+      );
+      console.log(`📨 Sent ${notifications.length} notifications to user`);
     }
+  } catch (error) {
+    console.error("❌ Error fetching notifications:", error.message);
   }
-
 
   ws.on("message", async (message) => {
     try {
@@ -149,7 +151,6 @@ wss.on("connection", async (ws, req) => {
           }
           ws.send(JSON.stringify({ type: "PONG", timestamp: Date.now() }));
           break;
-
 
         default:
           console.log("Unknown message type:", data.type);
@@ -169,28 +170,24 @@ wss.on("connection", async (ws, req) => {
     console.error("❌ WebSocket error:", error.message);
   });
 
-
   ws.on("close", async (code, reason) => {
     connectedClients--;
     if (ws.userId) {
       const userIdStr = ws.userId.toString();
       const userConnections = onlineClients.get(userIdStr) || [];
 
-
       const remainingConnections = userConnections.filter(
         (client) => client !== ws
       );
 
       if (remainingConnections.length > 0) {
-
         onlineClients.set(userIdStr, remainingConnections);
         console.log(
           `🔌 User ${ws.userName} closed one connection, ${remainingConnections.length} remaining.`
         );
       } else {
-
         onlineClients.delete(userIdStr);
-        await markUserOffline(ws.userId); 
+        await markUserOffline(ws.userId);
 
         broadcastToAll(wss, {
           type: "USER_OFFLINE",
@@ -199,8 +196,6 @@ wss.on("connection", async (ws, req) => {
         });
         console.log(`🔴 User ${ws.userName} is now OFFLINE`);
       }
-    } else {
-      console.log("👻 Guest connection closed");
     }
   });
 });
@@ -214,8 +209,6 @@ const heartbeatInterval = setInterval(() => {
 
     ws.isAlive = false;
     ws.ping();
-
-
   });
 }, 30000);
 
@@ -223,6 +216,7 @@ wss.on("close", () => {
   clearInterval(heartbeatInterval);
 });
 
+// Rest of your server setup remains the same
 (async () => {
   try {
     await connectDB();

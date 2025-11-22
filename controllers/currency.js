@@ -1,7 +1,6 @@
 import axios from "axios";
 import currency from "currency.js";
 import currencySymbol from "currency-symbol-map";
-import countryToCurrency from "country-to-currency";
 import { redis } from "../config/redis.js";
 
 let cachedRates = null;
@@ -15,19 +14,8 @@ const MAX_GEO_CACHE_SIZE = 1000;
 
 const RATE_KEY = "exchange_rates_ngn";
 
-let redisConnected = false;
-(async () => {
-  try {
-    await redis.connect();
-    redisConnected = true;
-  } catch (err) {
-    console.error("❌ Failed to connect to Redis:", err);
-    redisConnected = false;
-  }
-})();
-
 export const fetchRatesWithCache = async () => {
-  if (redisConnected) {
+
     try {
       const cached = await redis.get(RATE_KEY);
       if (cached) {
@@ -37,7 +25,7 @@ export const fetchRatesWithCache = async () => {
     } catch (err) {
       console.warn("Redis read failed, fetching fresh rates:", err.message);
     }
-  }
+
 
   const { data } = await axios.get(
     "https://api.exchangerate-api.com/v4/latest/NGN"
@@ -158,8 +146,6 @@ export function createCurrencyObject(
     convertedTotalPrice: totalPrice * currencyInfo.exchangeRate,
   };
 }
-
-
 
 const convertSinglePrice = (price, rate, symbol, currencyCode) => {
   const converted = currency(price).multiply(rate).value;

@@ -1,6 +1,6 @@
 import Product from "../models/product.js";
 import { v2 as cloudinary } from "cloudinary";
-
+import currencySymbol from "currency-symbol-map";
 import crypto from "crypto";
 
 import { Notification } from "../models/notification.js";
@@ -15,17 +15,6 @@ import {
 
 const CACHE_TTL = 300;
 const CACHE_PREFIX = "products:";
-
-let redisConnected = false;
-(async () => {
-  try {
-    await redis.connect();
-    redisConnected = true;
-  } catch (err) {
-    console.error("❌ Failed to connect to Redis:", err);
-    redisConnected = false;
-  }
-})();
 
 const generateCacheKey = (query) => {
   const { page, limit, cat, color, size, min, max, search, sort } = query;
@@ -49,7 +38,7 @@ const generateCacheKey = (query) => {
 };
 
 const getFromCache = async (key) => {
-  if (!redisConnected) return null;
+
   try {
     const cached = await redis.get(key);
     if (cached) {
@@ -64,7 +53,7 @@ const getFromCache = async (key) => {
 };
 
 const setCache = async (key, data, ttl = CACHE_TTL) => {
-  if (!redisConnected) return;
+
   try {
     await redis.set(key, JSON.stringify(data), {
       EX: ttl,
@@ -76,7 +65,7 @@ const setCache = async (key, data, ttl = CACHE_TTL) => {
 };
 
 export const invalidateProductCache = async () => {
-  if (!redisConnected) return;
+
   try {
     const keys = await redis.keys(`${CACHE_PREFIX}*`);
     if (keys.length > 0) {
@@ -216,10 +205,24 @@ export const getAllProducts = async (req, res) => {
       sort,
     } = req.query;
 
-    const currencyInfo = await getClientIP(req);
+    const ip = getClientIP(req);
+    const countryCode = await getCountry(ip);
+    const currencyCode = getCurrencyCode(countryCode);
+    const rates = await getRates();
+    const exchangeRate = rates[currencyCode] || 1;
+    const symbol = currencySymbol(currencyCode) || currencyCode;
+
+    const currencyInfo = {
+      currency: currencyCode,
+      symbol: symbol,
+      exchangeRate: exchangeRate,
+      country: countryCode,
+    };
+
     console.log(
       `💱 Products currency: ${currencyInfo.currency} (${currencyInfo.symbol})`
     );
+
     const cacheKey = generateCacheKey(req.query);
 
     if (Number(limit) === 0) {
@@ -233,9 +236,8 @@ export const getAllProducts = async (req, res) => {
 
       const all = await Product.find({});
 
-      const productsWithCurrency = all.map((product) =>
-        addCurrencyToProduct(product, currencyInfo)
-      );
+      // ✅ FIX: Use Product static method
+      const productsWithCurrency = Product.convertToCurrency(all, currencyInfo);
 
       const response = {
         success: true,
@@ -270,7 +272,6 @@ export const getAllProducts = async (req, res) => {
 
     let sortOption = {};
     if (search && !sort) {
-      // Default to search relevance if searching and no other sort is specified
       sortOption = { score: { $meta: "textScore" } };
     } else if (sort === "a-z") {
       sortOption = { name: 1 };
@@ -281,17 +282,8 @@ export const getAllProducts = async (req, res) => {
     } else if (sort === "high-low") {
       sortOption = { price: -1 };
     } else {
-      sortOption = { createdAt: -1 }; // Default sort
+      sortOption = { createdAt: -1 };
     }
-
-    // if (search) {
-    //   const s = search.toLowerCase().trim();
-    //   query.$or = [
-    //     { name: { $regex: s, $options: "i" } },
-    //     { description: { $regex: s, $options: "i" } },
-    //     { category: { $regex: s, $options: "i" } },
-    //   ];
-    // }
 
     if (search) {
       query.$text = { $search: search.trim() };
@@ -321,8 +313,7 @@ export const getAllProducts = async (req, res) => {
     await setCache(cacheKey, responseData);
     return res.json(responseData);
   } catch (error) {
-    console.error("Error fetching prodcuts:", error.message);
-    res.status(500).json({ success: false, message: error.message });
+    console.error("Error fetching products:", error.message);
 
     if (!res.headersSent) {
       return res.status(500).json({
@@ -351,12 +342,21 @@ export const getSingleProduct = async (req, res) => {
 
     const ip = getClientIP(req);
     const countryCode = await getCountry(ip);
+    const currencyCode = getCurrencyCode(countryCode);
+    const rates = await getRates();
+    const exchangeRate = rates[currencyCode] || 1;
+    const symbol = currencySymbol(currencyCode) || currencyCode;
 
-    const productWithCurrency = product.toCurrency(countryCode);
+    const currencyInfo = {
+      currency: currencyCode,
+      symbol: symbol,
+      exchangeRate: exchangeRate,
+      country: countryCode,
+    };
 
+    const productWithCurrency = product.toCurrency(currencyInfo);
     res.json({
       success: true,
-      product,
       product: productWithCurrency,
     });
   } catch (error) {
@@ -548,7 +548,6 @@ export const updateProductPrice = async (req, res) => {
     const { productId } = req.params;
     const { price } = req.body;
 
-    // Validate discount input
     if (price === undefined) {
       return res.status(400).json({
         success: false,
@@ -556,7 +555,6 @@ export const updateProductPrice = async (req, res) => {
       });
     }
 
-    // Find and update
     const product = await Product.findById(productId);
     if (!product) {
       return res
@@ -581,10 +579,12 @@ export const updateProductPrice = async (req, res) => {
 
     await invalidateProductCache();
 
-    const formattedProduct = orders.map((order) => ({
+    const formattedProduct = {
       ...product.toObject(),
-      formatPrice: order.price,
-    }));
+      price: product.price,
+      finalPrice: product.finalPrice,
+      discount: product.discount,
+    };
 
     res.status(200).json({
       success: true,
