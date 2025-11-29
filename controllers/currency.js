@@ -25,7 +25,6 @@ export const fetchRatesWithCache = async () => {
     console.warn("Redis read failed, fetching fresh rates:", err.message);
   }
 
-
   const { data } = await axios.get(
     "https://api.exchangerate-api.com/v4/latest/NGN"
   );
@@ -43,26 +42,147 @@ export const fetchRatesWithCache = async () => {
 
 export const getCurrencyCode = (country) => {
   const map = {
-    NG: "NGN",
-    US: "USD",
-    GB: "GBP",
-    CA: "CAD",
-    AU: "AUD",
-    KE: "KES",
-    GH: "GHS",
-    ZA: "ZAR",
-    // European countries using EUR
-    DE: "EUR",
-    FR: "EUR",
-    NL: "EUR",
-    IT: "EUR",
-    ES: "EUR",
-    PT: "EUR",
-    IE: "EUR",
-    AT: "EUR",
-    BE: "EUR",
-    FI: "EUR",
-    GR: "EUR",
+    // 🌍 Africa
+    NG: "NGN", // Nigeria - Naira
+    ZA: "ZAR", // South Africa - Rand
+    KE: "KES", // Kenya - Shilling
+    GH: "GHS", // Ghana - Cedi
+    EG: "EGP", // Egypt - Pound
+    MA: "MAD", // Morocco - Dirham
+    TZ: "TZS", // Tanzania - Shilling
+    UG: "UGX", // Uganda - Shilling
+    ET: "ETB", // Ethiopia - Birr
+    DZ: "DZD", // Algeria - Dinar
+    AO: "AOA", // Angola - Kwanza
+    TN: "TND", // Tunisia - Dinar
+    LY: "LYD", // Libya - Dinar
+    SD: "SDG", // Sudan - Pound
+    RW: "RWF", // Rwanda - Franc
+    SN: "XOF", // Senegal - CFA Franc
+    CI: "XOF", // Ivory Coast - CFA Franc
+    CM: "XAF", // Cameroon - CFA Franc
+    BW: "BWP", // Botswana - Pula
+    MU: "MUR", // Mauritius - Rupee
+    ZM: "ZMW", // Zambia - Kwacha
+    ZW: "ZWL", // Zimbabwe - Dollar
+    MW: "MWK", // Malawi - Kwacha
+    MZ: "MZN", // Mozambique - Metical
+    NA: "NAD", // Namibia - Dollar
+
+    // 🌏 Asia
+    CN: "CNY", // China - Yuan
+    JP: "JPY", // Japan - Yen
+    IN: "INR", // India - Rupee
+    KR: "KRW", // South Korea - Won
+    SG: "SGD", // Singapore - Dollar
+    HK: "HKD", // Hong Kong - Dollar
+    MY: "MYR", // Malaysia - Ringgit
+    TH: "THB", // Thailand - Baht
+    ID: "IDR", // Indonesia - Rupiah
+    PH: "PHP", // Philippines - Peso
+    VN: "VND", // Vietnam - Dong
+    BD: "BDT", // Bangladesh - Taka
+    PK: "PKR", // Pakistan - Rupee
+    LK: "LKR", // Sri Lanka - Rupee
+    MM: "MMK", // Myanmar - Kyat
+    KH: "KHR", // Cambodia - Riel
+    LA: "LAK", // Laos - Kip
+    NP: "NPR", // Nepal - Rupee
+    AF: "AFN", // Afghanistan - Afghani
+    KZ: "KZT", // Kazakhstan - Tenge
+    UZ: "UZS", // Uzbekistan - Som
+    MN: "MNT", // Mongolia - Tugrik
+
+    // 🌍 Middle East
+    AE: "AED", // UAE - Dirham
+    SA: "SAR", // Saudi Arabia - Riyal
+    IL: "ILS", // Israel - Shekel
+    TR: "TRY", // Turkey - Lira
+    QA: "QAR", // Qatar - Riyal
+    KW: "KWD", // Kuwait - Dinar
+    OM: "OMR", // Oman - Rial
+    BH: "BHD", // Bahrain - Dinar
+    JO: "JOD", // Jordan - Dinar
+    LB: "LBP", // Lebanon - Pound
+    IQ: "IQD", // Iraq - Dinar
+    SY: "SYP", // Syria - Pound
+    YE: "YER", // Yemen - Rial
+
+    // 🇺🇸 Americas
+    US: "USD", // United States - Dollar
+    CA: "CAD", // Canada - Dollar
+    MX: "MXN", // Mexico - Peso
+    BR: "BRL", // Brazil - Real
+    AR: "ARS", // Argentina - Peso
+    CL: "CLP", // Chile - Peso
+    CO: "COP", // Colombia - Peso
+    PE: "PEN", // Peru - Sol
+    VE: "VES", // Venezuela - Bolívar
+    UY: "UYU", // Uruguay - Peso
+    PY: "PYG", // Paraguay - Guaraní
+    BO: "BOB", // Bolivia - Boliviano
+    CR: "CRC", // Costa Rica - Colón
+    PA: "PAB", // Panama - Balboa
+    GT: "GTQ", // Guatemala - Quetzal
+    HN: "HNL", // Honduras - Lempira
+    NI: "NIO", // Nicaragua - Córdoba
+    SV: "USD", // El Salvador - USD
+    DO: "DOP", // Dominican Republic - Peso
+    JM: "JMD", // Jamaica - Dollar
+    TT: "TTD", // Trinidad and Tobago - Dollar
+    BB: "BBD", // Barbados - Dollar
+    BS: "BSD", // Bahamas - Dollar
+
+    // 🇪🇺 Europe
+    GB: "GBP", // United Kingdom - Pound
+    CH: "CHF", // Switzerland - Franc
+    NO: "NOK", // Norway - Krone
+    SE: "SEK", // Sweden - Krona
+    DK: "DKK", // Denmark - Krone
+    PL: "PLN", // Poland - Zloty
+    CZ: "CZK", // Czech Republic - Koruna
+    HU: "HUF", // Hungary - Forint
+    RO: "RON", // Romania - Leu
+    BG: "BGN", // Bulgaria - Lev
+    HR: "EUR", // Croatia - Euro (since 2023)
+    RS: "RSD", // Serbia - Dinar
+    UA: "UAH", // Ukraine - Hryvnia
+    RU: "RUB", // Russia - Ruble
+    BY: "BYN", // Belarus - Ruble
+    IS: "ISK", // Iceland - Króna
+    AL: "ALL", // Albania - Lek
+    MK: "MKD", // North Macedonia - Denar
+    BA: "BAM", // Bosnia - Mark
+
+    // Euro Zone countries
+    DE: "EUR", // Germany
+    FR: "EUR", // France
+    IT: "EUR", // Italy
+    ES: "EUR", // Spain
+    NL: "EUR", // Netherlands
+    PT: "EUR", // Portugal
+    IE: "EUR", // Ireland
+    AT: "EUR", // Austria
+    BE: "EUR", // Belgium
+    FI: "EUR", // Finland
+    GR: "EUR", // Greece
+    LU: "EUR", // Luxembourg
+    SI: "EUR", // Slovenia
+    CY: "EUR", // Cyprus
+    MT: "EUR", // Malta
+    SK: "EUR", // Slovakia
+    EE: "EUR", // Estonia
+    LV: "EUR", // Latvia
+    LT: "EUR", // Lithuania
+
+    // 🌏 Oceania
+    AU: "AUD", // Australia - Dollar
+    NZ: "NZD", // New Zealand - Dollar
+    FJ: "FJD", // Fiji - Dollar
+    PG: "PGK", // Papua New Guinea - Kina
+    WS: "WST", // Samoa - Tala
+    TO: "TOP", // Tonga - Paʻanga
+    VU: "VUV", // Vanuatu - Vatu
   };
   return map[country] || "USD";
 };
@@ -77,6 +197,16 @@ export const getRates = async () => {
   }
 
   return cachedRates;
+};
+
+export const getExchangeRateForCurrency = async (currencyCode) => {
+  // If currency is NGN (base currency), no conversion needed
+  if (currencyCode === "NGN") {
+    return 1;
+  }
+
+  const rates = await getRates();
+  return rates[currencyCode] || 1;
 };
 
 export const getCountry = async (ip) => {
@@ -165,14 +295,13 @@ export const getPrice = async (req, res) => {
     if (!price) return res.status(400).json({ error: "Invalid price" });
 
     const ip = getClientIP(req);
-
     const countryCode = await getCountry(ip);
     const currencyCode = getCurrencyCode(countryCode);
 
-    const rates = await getRates();
-    const rate = rates[currencyCode] || 1;
-
+    // ✅ FIX: Use exchange rate of 1 for NGN
+    const rate = await getExchangeRateForCurrency(currencyCode);
     const symbol = currencySymbol(currencyCode) || currencyCode;
+
     const { raw, formatted } = convertSinglePrice(
       price,
       rate,
@@ -215,7 +344,6 @@ export const getPrices = async (req, res) => {
       });
     }
 
-    // Validate all prices
     const validPrices = prices.every((p) => !isNaN(Number(p)) && Number(p) > 0);
     if (!validPrices) {
       return res.status(400).json({
@@ -228,11 +356,9 @@ export const getPrices = async (req, res) => {
     const countryCode = await getCountry(ip);
     const currencyCode = getCurrencyCode(countryCode);
 
-    const rates = await getRates();
-    const rate = rates[currencyCode] || 1;
+    const rate = await getExchangeRateForCurrency(currencyCode);
     const symbol = currencySymbol(currencyCode) || currencyCode;
 
-    // Convert all prices
     const convertedPrices = prices.map((price) => {
       const numPrice = Number(price);
       const { raw, formatted } = convertSinglePrice(
@@ -278,8 +404,8 @@ export const getExchangeRate = async (req, res) => {
     const countryCode = await getCountry(ip);
     const currencyCode = getCurrencyCode(countryCode);
 
-    const rates = await getRates();
-    const rate = rates[currencyCode] || 1;
+    // ✅ FIX: Use exchange rate of 1 for NGN
+    const rate = await getExchangeRateForCurrency(currencyCode);
     const symbol = currencySymbol(currencyCode) || currencyCode;
 
     return res.json({
